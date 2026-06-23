@@ -10,7 +10,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -51,11 +50,26 @@ const EMPTY_FORM: WineFormData = {
   ocrUsed: false,
 };
 
+const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
+  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
+  : 'http://localhost:80';
+
+async function callOCR(base64: string): Promise<Partial<WineFormData>> {
+  const response = await fetch(`${API_BASE}/api/ocr`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ imageBase64: base64 }),
+  });
+  if (!response.ok) throw new Error('OCR failed');
+  const data = await response.json() as { fields: Partial<WineFormData> };
+  return data.fields ?? {};
+}
+
 interface WineFormProps {
   initialValues?: Partial<WineFormData>;
   onSave: (data: WineFormData) => Promise<void>;
   onCancel: () => void;
-  onScanPress: () => void;
+  onScanPress?: () => void;
 }
 
 function SectionHeader({ title }: { title: string }) {
@@ -77,33 +91,74 @@ function FieldLabel({ label, optional }: { label: string; optional?: boolean }) 
   );
 }
 
-export function WineForm({ initialValues, onSave, onCancel, onScanPress }: WineFormProps) {
+export function WineForm({ initialValues, onSave, onCancel }: WineFormProps) {
   const colors = useColors();
   const [form, setForm] = useState<WineFormData>({ ...EMPTY_FORM, ...initialValues });
   const [isSaving, setIsSaving] = useState(false);
+  const [isOcrLoading, setIsOcrLoading] = useState(false);
 
   function set<K extends keyof WineFormData>(key: K, value: WineFormData[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
   }
 
-  const pickPhoto = async (fromCamera: boolean) => {
+  const runOCROnImage = async (uri: string, base64: string) => {
+    setIsOcrLoading(true);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const fields = await callOCR(base64);
+      setForm(prev => ({
+        ...prev,
+        ...fields,
+        photos: [uri, ...prev.photos],
+        ocrUsed: true,
+      }));
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      Alert.alert(
+        'OCR no disponible',
+        'No se pudo extraer la información. La foto se ha añadido igualmente.',
+      );
+      setForm(prev => ({ ...prev, photos: [uri, ...prev.photos] }));
+    } finally {
+      setIsOcrLoading(false);
+    }
+  };
+
+  const pickAndScan = async (fromCamera: boolean) => {
     try {
       let result: ImagePicker.ImagePickerResult;
+      const opts: ImagePicker.ImagePickerOptions = {
+        mediaTypes: ['images'],
+        quality: 0.65,
+        base64: true,
+        allowsEditing: false,
+      };
       if (fromCamera) {
-        result = await ImagePicker.launchCameraAsync({
-          mediaTypes: ['images'],
-          quality: 0.7,
-          allowsEditing: true,
-          aspect: [3, 4],
-        });
+        result = await ImagePicker.launchCameraAsync(opts);
       } else {
-        result = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images'],
-          quality: 0.7,
-          allowsMultipleSelection: false,
-          aspect: [3, 4],
-          allowsEditing: true,
-        });
+        result = await ImagePicker.launchImageLibraryAsync(opts);
+      }
+      if (!result.canceled && result.assets[0]) {
+        await runOCROnImage(result.assets[0].uri, result.assets[0].base64 ?? '');
+      }
+    } catch {
+      Alert.alert('Error', 'No se pudo acceder a la cámara o galería.');
+    }
+  };
+
+  const pickPhotoOnly = async (fromCamera: boolean) => {
+    try {
+      let result: ImagePicker.ImagePickerResult;
+      const opts: ImagePicker.ImagePickerOptions = {
+        mediaTypes: ['images'],
+        quality: 0.7,
+        allowsEditing: true,
+        aspect: [3, 4],
+      };
+      if (fromCamera) {
+        result = await ImagePicker.launchCameraAsync(opts);
+      } else {
+        result = await ImagePicker.launchImageLibraryAsync(opts);
       }
       if (!result.canceled && result.assets[0]) {
         set('photos', [...form.photos, result.assets[0].uri]);
@@ -113,14 +168,30 @@ export function WineForm({ initialValues, onSave, onCancel, onScanPress }: WineF
     }
   };
 
-  const addPhoto = () => {
+  const handleScanPress = () => {
     if (Platform.OS === 'web') {
-      pickPhoto(false);
+      pickAndScan(false);
       return;
     }
-    Alert.alert('Añadir foto', 'Elige una opción', [
-      { text: 'Cámara', onPress: () => pickPhoto(true) },
-      { text: 'Galería', onPress: () => pickPhoto(false) },
+    Alert.alert(
+      'Escanear etiqueta',
+      'Elige cómo quieres escanear la etiqueta para extraer la información automáticamente',
+      [
+        { text: 'Cámara', onPress: () => pickAndScan(true) },
+        { text: 'Desde galería', onPress: () => pickAndScan(false) },
+        { text: 'Cancelar', style: 'cancel' },
+      ],
+    );
+  };
+
+  const handleAddPhotoOnly = () => {
+    if (Platform.OS === 'web') {
+      pickPhotoOnly(false);
+      return;
+    }
+    Alert.alert('Añadir foto', 'Solo añadir foto sin extraer información', [
+      { text: 'Cámara', onPress: () => pickPhotoOnly(true) },
+      { text: 'Galería', onPress: () => pickPhotoOnly(false) },
       { text: 'Cancelar', style: 'cancel' },
     ]);
   };
@@ -148,6 +219,7 @@ export function WineForm({ initialValues, onSave, onCancel, onScanPress }: WineF
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
         <Pressable onPress={onCancel} style={styles.headerBtn}>
           <Text style={[styles.cancelText, { color: colors.mutedForeground }]}>Cancelar</Text>
@@ -155,7 +227,7 @@ export function WineForm({ initialValues, onSave, onCancel, onScanPress }: WineF
         <Text style={[styles.headerTitle, { color: colors.foreground }]}>
           {initialValues?.name ? 'Editar vino' : 'Nuevo vino'}
         </Text>
-        <Pressable onPress={handleSave} disabled={isSaving} style={[styles.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius / 1.5 }]}>
+        <Pressable onPress={handleSave} disabled={isSaving || isOcrLoading} style={[styles.saveBtn, { backgroundColor: colors.primary, borderRadius: colors.radius / 1.5, opacity: (isSaving || isOcrLoading) ? 0.6 : 1 }]}>
           {isSaving ? (
             <ActivityIndicator size="small" color="#FFF" />
           ) : (
@@ -164,32 +236,54 @@ export function WineForm({ initialValues, onSave, onCancel, onScanPress }: WineF
         </Pressable>
       </View>
 
+      {/* OCR loading overlay banner */}
+      {isOcrLoading && (
+        <View style={[styles.ocrLoadingBanner, { backgroundColor: colors.primary }]}>
+          <ActivityIndicator size="small" color="#FFF" />
+          <Text style={styles.ocrLoadingText}>Analizando etiqueta con OCR...</Text>
+        </View>
+      )}
+
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Pressable
-          onPress={onScanPress}
-          style={[styles.scanButton, { backgroundColor: colors.primary, borderRadius: colors.radius }]}
-        >
-          <Ionicons name="scan" size={20} color="#FFF" />
-          <Text style={styles.scanText}>Escanear etiqueta con OCR</Text>
-          <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.7)" />
-        </Pressable>
-
+        {/* OCR extraction result banner */}
         {form.ocrUsed && (
-          <View style={[styles.ocrBanner, { backgroundColor: colors.secondary, borderRadius: colors.radius / 1.5 }]}>
-            <Ionicons name="sparkles" size={14} color={colors.accent} />
-            <Text style={[styles.ocrBannerText, { color: colors.mutedForeground }]}>
-              Datos extraídos por OCR. Revisa y completa los campos.
+          <View style={[styles.ocrBanner, { backgroundColor: '#EAF6EC', borderRadius: colors.radius / 1.5, borderColor: '#27AE60' }]}>
+            <Ionicons name="checkmark-circle" size={18} color="#27AE60" />
+            <Text style={[styles.ocrBannerText, { color: '#1D7A3A' }]}>
+              ¡Info extraída por OCR! Revisa y completa los campos que quieras.
             </Text>
           </View>
         )}
 
-        <SectionHeader title="Fotos" />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosRow}>
+        {/* FOTO Y ESCANEO — sección principal */}
+        <SectionHeader title="Foto y escaneo" />
+
+        {/* Scan button — primary CTA */}
+        <Pressable
+          onPress={handleScanPress}
+          disabled={isOcrLoading}
+          style={({ pressed }) => [
+            styles.scanButton,
+            { backgroundColor: colors.primary, borderRadius: colors.radius, opacity: pressed || isOcrLoading ? 0.8 : 1 },
+          ]}
+        >
+          <View style={styles.scanIconBox}>
+            <Ionicons name="scan-circle" size={36} color="rgba(255,255,255,0.9)" />
+          </View>
+          <View style={styles.scanTextBox}>
+            <Text style={styles.scanTitle}>Escanear etiqueta</Text>
+            <Text style={styles.scanSubtitle}>Extrae automáticamente: añada, bodega, uvas, alcohol y más</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={20} color="rgba(255,255,255,0.6)" />
+        </Pressable>
+
+        {/* Photos row */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.photosRow} contentContainerStyle={styles.photosContent}>
           {form.photos.map((uri, i) => (
             <View key={i} style={styles.photoWrapper}>
               <Image source={{ uri }} style={styles.photoThumb} contentFit="cover" />
@@ -202,14 +296,15 @@ export function WineForm({ initialValues, onSave, onCancel, onScanPress }: WineF
             </View>
           ))}
           <Pressable
-            onPress={addPhoto}
+            onPress={handleAddPhotoOnly}
             style={[styles.addPhotoBtn, { borderColor: colors.border, borderRadius: colors.radius }]}
           >
-            <Ionicons name="camera-outline" size={24} color={colors.primary} />
-            <Text style={[styles.addPhotoText, { color: colors.primary }]}>Añadir</Text>
+            <Ionicons name="image-outline" size={22} color={colors.mutedForeground} />
+            <Text style={[styles.addPhotoText, { color: colors.mutedForeground }]}>Solo foto</Text>
           </Pressable>
         </ScrollView>
 
+        {/* Datos del vino */}
         <SectionHeader title="Datos del vino" />
 
         <FieldLabel label="Nombre del vino" />
@@ -257,7 +352,7 @@ export function WineForm({ initialValues, onSave, onCancel, onScanPress }: WineF
         </View>
 
         <FieldLabel label="Tipo de vino" />
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.typeRow}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.typeRow} contentContainerStyle={styles.typeContent}>
           {WINE_TYPES.map(({ value, label, color }) => (
             <Pressable
               key={value}
@@ -319,6 +414,7 @@ export function WineForm({ initialValues, onSave, onCancel, onScanPress }: WineF
           placeholderTextColor={colors.mutedForeground}
         />
 
+        {/* Mi cata */}
         <SectionHeader title="Mi cata" />
 
         <View style={styles.row}>
@@ -436,52 +532,48 @@ const styles = StyleSheet.create({
   cancelText: { fontSize: 15, fontFamily: 'Inter_400Regular' },
   saveBtn: { paddingHorizontal: 16, paddingVertical: 8 },
   saveText: { color: '#FFF', fontSize: 14, fontFamily: 'Inter_600SemiBold' },
+  ocrLoadingBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  ocrLoadingText: { color: '#FFF', fontSize: 14, fontFamily: 'Inter_500Medium' },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 10 },
-  scanButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 14,
-    gap: 10,
-    marginBottom: 4,
-  },
-  scanText: { flex: 1, color: '#FFF', fontSize: 15, fontFamily: 'Inter_600SemiBold' },
   ocrBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
+    alignItems: 'flex-start',
     gap: 8,
+    padding: 12,
+    borderWidth: 1,
   },
-  ocrBannerText: { flex: 1, fontSize: 12, fontFamily: 'Inter_400Regular' },
+  ocrBannerText: { flex: 1, fontSize: 13, fontFamily: 'Inter_500Medium', lineHeight: 18 },
   sectionHeader: {
     borderLeftWidth: 3,
     paddingLeft: 10,
     marginTop: 8,
-    marginBottom: 4,
+    marginBottom: 2,
   },
-  sectionTitle: { fontSize: 13, fontFamily: 'Inter_700Bold', letterSpacing: 0.8, textTransform: 'uppercase' },
+  sectionTitle: { fontSize: 12, fontFamily: 'Inter_700Bold', letterSpacing: 0.8, textTransform: 'uppercase' },
   fieldLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
   fieldLabel: { fontSize: 13, fontFamily: 'Inter_500Medium' },
   optionalTag: { fontSize: 11, fontFamily: 'Inter_400Regular', fontStyle: 'italic' },
-  input: {
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    fontSize: 15,
-    fontFamily: 'Inter_400Regular',
+  scanButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    gap: 12,
+    marginBottom: 12,
   },
-  textArea: {
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    fontSize: 15,
-    fontFamily: 'Inter_400Regular',
-    minHeight: 100,
-  },
-  row: { flexDirection: 'row', gap: 10 },
-  half: { flex: 1 },
+  scanIconBox: { width: 44, alignItems: 'center' },
+  scanTextBox: { flex: 1 },
+  scanTitle: { color: '#FFF', fontSize: 16, fontFamily: 'Inter_700Bold', marginBottom: 2 },
+  scanSubtitle: { color: 'rgba(255,255,255,0.75)', fontSize: 12, fontFamily: 'Inter_400Regular', lineHeight: 16 },
   photosRow: { marginBottom: 4 },
-  photoWrapper: { position: 'relative', marginRight: 10 },
+  photosContent: { gap: 10, paddingVertical: 4 },
+  photoWrapper: { position: 'relative' },
   photoThumb: { width: 80, height: 100, borderRadius: 8 },
   removePhotoBtn: {
     position: 'absolute',
@@ -503,11 +595,28 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   addPhotoText: { fontSize: 11, fontFamily: 'Inter_500Medium' },
+  input: {
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
+    fontFamily: 'Inter_400Regular',
+  },
+  textArea: {
+    borderWidth: 1,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    fontSize: 15,
+    fontFamily: 'Inter_400Regular',
+    minHeight: 100,
+  },
+  row: { flexDirection: 'row', gap: 10 },
+  half: { flex: 1 },
   typeRow: { marginBottom: 4 },
+  typeContent: { gap: 8, paddingBottom: 4 },
   typeChip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    marginRight: 8,
     borderWidth: 1,
   },
   typeChipText: { fontSize: 13, fontFamily: 'Inter_500Medium' },

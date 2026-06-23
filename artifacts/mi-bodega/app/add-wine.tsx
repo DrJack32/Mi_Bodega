@@ -55,7 +55,6 @@ export default function AddWineScreen() {
       initialValues={initialValues}
       onSave={handleSave}
       onCancel={() => router.back()}
-      onScanPress={() => router.push('/scan')}
     />
   );
 }
