@@ -1,0 +1,1 @@
+- [Mi Bodega OCR setup](mi-bodega-ocr.md) — OCR.space free key "helloworld"; parseWineFields() runs server-side; classic Tabs layout more reliable than NativeTabs for web.

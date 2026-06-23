@@ -1,0 +1,8 @@
+uploads = []
+outputs = []
+
+[[generated]]
+id = "B0zCWNh6DLCGbBPaYgAY1"
+uri = "file://artifacts/mi-bodega/assets/images/icon.png"
+type = "image"
+title = "generated_image"

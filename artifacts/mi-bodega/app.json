@@ -1,0 +1,51 @@
+{
+  "expo": {
+    "name": "Mi Bodega Personal",
+    "slug": "mi-bodega",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "mi-bodega",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#180D0E"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Mi Bodega usa la cámara para fotografiar etiquetas de vino y extraer información automáticamente.",
+        "NSPhotoLibraryUsageDescription": "Mi Bodega accede a tu galería para añadir fotos de tus vinos."
+      }
+    },
+    "android": {
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      [
+        "expo-router",
+        {
+          "origin": "https://replit.com/"
+        }
+      ],
+      "expo-font",
+      "expo-web-browser",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Mi Bodega accede a tu galería para añadir fotos de tus vinos.",
+          "cameraPermission": "Mi Bodega usa la cámara para fotografiar etiquetas de vino."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    }
+  }
+}

@@ -1,45 +1,63 @@
-# [Project name]
+# Mi Bodega Personal
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Diario personal de vinos para móvil (iOS/Android). Permite añadir vinos con foto y escáner OCR de etiqueta, valorarlos, marcarlos como favoritos y ver estadísticas de tu colección.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- `pnpm --filter @workspace/api-server run dev` — API server (puerto 5000/8080)
+- `pnpm --filter @workspace/mi-bodega run dev` — Expo app (via Expo Go o web)
+- `pnpm run typecheck` — typecheck global
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Mobile: Expo SDK 54, expo-router, React Native 0.81
+- API: Express 5 (para proxy OCR)
+- Persistencia: AsyncStorage (@react-native-async-storage/async-storage)
+- OCR: OCR.space free API (apikey="helloworld", 500 req/día gratis)
+- Build: esbuild (API server CJS bundle)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
-
-## Architecture decisions
-
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- `artifacts/mi-bodega/` — app Expo
+  - `app/(tabs)/` — pantallas principales (Bodega, Favoritos, Estadísticas)
+  - `app/add-wine.tsx` — añadir/editar vino (modal)
+  - `app/scan.tsx` — escáner OCR de etiqueta
+  - `app/wine/[id].tsx` — detalle del vino
+  - `contexts/WineContext.tsx` — CRUD wines con AsyncStorage
+  - `components/WineCard.tsx` — tarjeta de vino en lista
+  - `components/WineForm.tsx` — formulario completo
+  - `constants/colors.ts` — paleta vino (vino/dorado/crema) + dark mode
+- `artifacts/api-server/` — Express server
+  - `src/routes/ocr.ts` — proxy a OCR.space + parseWineFields()
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- **Biblioteca**: listado de vinos con búsqueda y filtros por tipo y ordenación
+- **Añadir vino**: formulario completo (fotos, datos básicos, cata personal, notas)
+- **Escáner OCR**: fotografía la etiqueta, extrae añada, alcohol, tipo, país, uvas, DO
+- **Favoritos**: colección filtrada de vinos marcados con corazón
+- **Estadísticas**: total, puntuación media, precio medio, breakdown por tipo y país
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Idioma de la UI: español
+- OCR gratuito (sin APIs de pago)
+- Sin backend de base de datos — solo AsyncStorage
+
+## Architecture decisions
+
+- AsyncStorage en cliente, no base de datos servidor — adecuado para diario personal sin sincronización multi-dispositivo
+- OCR.space free tier ("helloworld" key): 500 peticiones/día, sin registro. Para mayor uso, el usuario puede obtener una clave gratuita en ocr.space
+- `parseWineFields()` en el servidor (Express) para extraer campos de texto OCR usando regex
+- Paleta de colores: vino (#7B2D3E), dorado (#C4974A), crema (#F7F3EF) con soporte dark mode completo
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- La clave "helloworld" de OCR.space tiene límite de 1MB por imagen y 500 req/día. Comprimir imágenes (quality: 0.7) antes de enviar.
+- `express.json({ limit: "10mb" })` necesario para recibir base64 de imágenes
+- Los tabs usan Tabs clásicos de expo-router (sin NativeTabs/LiquidGlass para mayor compatibilidad web)
 
 ## Pointers
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- Ver `pnpm-workspace` skill para estructura del monorepo
