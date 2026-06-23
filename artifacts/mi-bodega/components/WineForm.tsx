@@ -110,9 +110,10 @@ export function WineForm({ initialValues, onSave, onCancel }: WineFormProps) {
     try {
       const opts: ImagePicker.ImagePickerOptions = {
         mediaTypes: ['images'],
-        quality: 0.65,
+        quality: 0.45,
         base64: true,
         allowsEditing: false,
+        exif: false,
       };
       const result = fromCamera
         ? await ImagePicker.launchCameraAsync(opts)
