@@ -1,0 +1,8 @@
+{
+  "name": "mi-bodega-web-launcher",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "bash start-expo-web.sh"
+  }
+}

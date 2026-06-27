@@ -24,7 +24,8 @@
       "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
     },
     "web": {
-      "favicon": "./assets/images/icon.png"
+      "favicon": "./assets/images/icon.png",
+      "output": "single"
     },
     "plugins": [
       [
