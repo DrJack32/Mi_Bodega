@@ -29,10 +29,16 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
       - name: Build APK with EAS
         working-directory: artifacts/mi-bodega
-        run: eas build --platform android --profile preview --non-interactive --output ./mi-bodega.apk
-      - name: Upload APK as artifact
+run: eas build --platform android --profile preview --non-interactive --wait
+- name: Download APK and upload to GitHub
+        working-directory: artifacts/mi-bodega
+        run: |
+          APK_URL=$(eas build:list --platform android --limit 1 --status finished --json | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['artifacts']['buildUrl'])")
+          curl -L "$APK_URL" -o mi-bodega.apk
+          echo "APK descargado correctamente"
+      - name: Upload APK as GitHub artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mi-bodega-android
+          name: mi-bodega-android-apk
           path: artifacts/mi-bodega/mi-bodega.apk
           retention-days: 30
