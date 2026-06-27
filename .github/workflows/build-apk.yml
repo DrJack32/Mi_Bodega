@@ -1,0 +1,71 @@
+name: Build Android APK
+
+# Compila un APK instalable de Mi Bodega en cada push (p. ej. al usar "Save to GitHub").
+# El APK queda disponible como artifact descargable en la pestaña "Actions".
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # Dominio del backend para el OCR (se inyecta en el bundle JS en tiempo de build).
+      # Cámbialo por tu backend desplegado si lo mueves a producción.
+      EXPO_PUBLIC_DOMAIN: 313fe69c-0ee6-4106-9924-e70da315f732.preview.emergentagent.com
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK components (NDK, CMake, platform)
+        run: |
+          yes | sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006" "cmake;3.22.1" >/dev/null 2>&1 || true
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Expo prebuild (Android)
+        working-directory: artifacts/mi-bodega
+        run: pnpm exec expo prebuild --platform android --no-install --clean
+
+      - name: Increase Gradle memory
+        working-directory: artifacts/mi-bodega/android
+        run: |
+          echo "" >> gradle.properties
+          echo "org.gradle.jvmargs=-Xmx5120m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8" >> gradle.properties
+
+      - name: Build Release APK (autosigned with debug keystore)
+        working-directory: artifacts/mi-bodega/android
+        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon --stacktrace
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi-bodega-android-apk
+          path: artifacts/mi-bodega/android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30

@@ -35,7 +35,17 @@ pnpm exec expo export --platform web --output-dir dist
 ## Pantallas/funcionalidad
 - Bodega (listado + búsqueda + filtros por tipo y orden), Añadir vino (form + OCR), Escáner OCR, Detalle vino, Favoritos, Estadísticas.
 
+## CI: APK automático (2026-06-27)
+- `.github/workflows/build-apk.yml`: en cada push a main/master (o manual via workflow_dispatch) compila un APK Android instalable y lo sube como artifact `mi-bodega-android-apk` (pestaña Actions, retención 30 días).
+- Pasos: setup pnpm/Node20/Java17/Android SDK → instala NDK 27.1.12297006 + CMake 3.22.1 → `pnpm install` → `expo prebuild --platform android` → `gradlew assembleRelease` (arm64-v8a, armeabi-v7a).
+- APK = **release firmado con el keystore debug** (default de la plantilla Expo: `release { signingConfig signingConfigs.debug }`), por lo que es autónomo (no necesita Metro) e instalable sin credenciales. Un APK debug puro NO sirve (requiere dev server).
+- `EXPO_PUBLIC_DOMAIN` se inyecta en el bundle (env del job) → apunta al preview para que el OCR funcione mientras el preview esté activo. Resto de la app funciona offline (AsyncStorage).
+- Validado localmente: `expo prebuild` OK y firma release=debug confirmada. El build nativo completo solo corre en GitHub Actions (~20-40 min).
+- `app.json`: añadido `android.package = com.drjack32.mibodega`. `android/` e `ios/` ignorados en git (CI los regenera).
+- Repo destino: https://github.com/DrJack32/Mi_Bodega/
+
 ## Backlog / Next Action Items
+- [ ] Nota: el workflow corre en CADA push a main (~30 min/cada Save to GitHub). Se puede limitar con `paths:` o usar solo `workflow_dispatch` si se quiere ahorrar minutos.
 - [ ] El usuario quiere "añadir/mejorar una funcionalidad" — pendiente de definir cuál.
 - [ ] Probar flujo OCR end-to-end con una etiqueta real desde web (image-picker en web usa galería).
 - [ ] Hot reload en web no disponible (límite inotify); cada cambio requiere re-export.
