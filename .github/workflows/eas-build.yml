@@ -9,6 +9,8 @@ jobs:
   build:
     name: EAS Build (Android APK)
     runs-on: ubuntu-latest
+    env:
+      EAS_NO_VCS: 1
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
@@ -16,7 +18,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -31,6 +33,17 @@ jobs:
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Configure EAS project
+        working-directory: artifacts/mi-bodega
+        env:
+          EAS_PROJECT_ID: ${{ secrets.EAS_PROJECT_ID }}
+        run: |
+          if [ -n "$EAS_PROJECT_ID" ]; then
+            eas init --id "$EAS_PROJECT_ID" --non-interactive
+          else
+            eas init --non-interactive
+          fi
 
       - name: Build APK with EAS
         working-directory: artifacts/mi-bodega
