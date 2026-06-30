@@ -16,6 +16,8 @@ jobs:
       # Dominio del backend para el OCR (se inyecta en el bundle JS en tiempo de build).
       # Cámbialo por tu backend desplegado si lo mueves a producción.
       EXPO_PUBLIC_DOMAIN: 313fe69c-0ee6-4106-9924-e70da315f732.preview.emergentagent.com
+      NODE_OPTIONS: --max_old_space_size=6144
+      GRADLE_OPTS: -Dorg.gradle.workers.max=2
 
     steps:
       - name: Checkout
@@ -52,11 +54,16 @@ jobs:
         working-directory: artifacts/mi-bodega
         run: pnpm exec expo prebuild --platform android --no-install --clean
 
+      - name: Check Android JS bundle
+        working-directory: artifacts/mi-bodega
+        run: pnpm exec expo export --platform android --output-dir /tmp/mi-bodega-android-export --clear
+
       - name: Increase Gradle memory
         working-directory: artifacts/mi-bodega/android
         run: |
           echo "" >> gradle.properties
           echo "org.gradle.jvmargs=-Xmx5120m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8" >> gradle.properties
+          echo "org.gradle.workers.max=2" >> gradle.properties
 
       - name: Build Release APK (autosigned with debug keystore)
         working-directory: artifacts/mi-bodega/android
