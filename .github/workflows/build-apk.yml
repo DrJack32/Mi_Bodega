@@ -65,14 +65,14 @@ jobs:
           echo "org.gradle.jvmargs=-Xmx5120m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8" >> gradle.properties
           echo "org.gradle.workers.max=2" >> gradle.properties
 
-      - name: Build Release APK (autosigned with debug keystore)
+      - name: Build Debug APK
         working-directory: artifacts/mi-bodega/android
-        run: ./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon --stacktrace --warning-mode all
+        run: ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon --stacktrace --warning-mode all
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: mi-bodega-android-apk
-          path: artifacts/mi-bodega/android/app/build/outputs/apk/release/*.apk
+          path: artifacts/mi-bodega/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
