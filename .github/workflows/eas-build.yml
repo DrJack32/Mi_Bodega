@@ -42,7 +42,7 @@ jobs:
           if [ -n "$EAS_PROJECT_ID" ]; then
             eas init --id "$EAS_PROJECT_ID" --non-interactive
           else
-            eas init --non-interactive
+            eas init --non-interactive --force
           fi
 
       - name: Build APK with EAS
