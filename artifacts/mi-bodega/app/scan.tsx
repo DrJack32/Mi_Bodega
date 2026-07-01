@@ -1,8 +1,8 @@
-import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
-import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { Ionicons } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
+import * as ImagePicker from "expo-image-picker";
+import { useRouter } from "expo-router";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -11,93 +11,86 @@ import {
   StyleSheet,
   Text,
   View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColors } from '@/hooks/useColors';
-import { WineFormData } from '@/contexts/WineContext';
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : 'http://localhost:80';
-
-async function runOCR(base64: string): Promise<Partial<WineFormData>> {
-  try {
-    const response = await fetch(`${API_BASE}/api/ocr`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ imageBase64: base64 }),
-    });
-    if (!response.ok) throw new Error('OCR failed');
-    const data = await response.json() as { fields: Partial<WineFormData> };
-    return data.fields ?? {};
-  } catch {
-    return {};
-  }
-}
+import { useColors } from "@/hooks/useColors";
+import { callOCR } from "@/lib/ocr";
 
 export default function ScanScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [isProcessing, setIsProcessing] = useState(false);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState("");
 
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
-  const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom;
+  const topPad = Platform.OS === "web" ? 67 : insets.top;
+  const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
   const processImage = async (uri: string, base64: string) => {
     setIsProcessing(true);
-    setStatus('Analizando etiqueta...');
+    setStatus("Analizando etiqueta...");
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const fields = await runOCR(base64);
-      setStatus('¡Listo!');
+      const fields = await callOCR(base64);
+      const hasData = Object.keys(fields).length > 0;
+      setStatus("Listo");
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
+      if (!hasData) {
+        Alert.alert(
+          "Poco texto detectado",
+          "No he podido reconocer datos claros de la etiqueta. Aun asi puedes guardar la foto y completar el vino manualmente.",
+        );
+      }
+
       router.replace({
-        pathname: '/add-wine',
+        pathname: "/add-wine",
         params: {
           ocrData: JSON.stringify(fields),
           photoUri: uri,
         },
       });
-    } catch {
+    } catch (err) {
       setIsProcessing(false);
-      setStatus('');
-      Alert.alert('Error', 'No se pudo procesar la imagen. Prueba con otra foto más clara.');
+      setStatus("");
+      const msg = err instanceof Error ? err.message : "Prueba con otra foto mas clara.";
+      Alert.alert("Error", `No se pudo procesar la imagen.\n\n${msg}`);
     }
   };
 
   const pickFromCamera = async () => {
     try {
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        quality: 0.7,
+        mediaTypes: ["images"],
+        quality: 0.6,
         base64: true,
         allowsEditing: false,
+        exif: false,
       });
       if (!result.canceled && result.assets[0]) {
-        await processImage(result.assets[0].uri, result.assets[0].base64 ?? '');
+        await processImage(result.assets[0].uri, result.assets[0].base64 ?? "");
       }
     } catch {
-      Alert.alert('Error', 'No se pudo acceder a la cámara.');
+      Alert.alert("Error", "No se pudo acceder a la camara.");
     }
   };
 
   const pickFromGallery = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 0.7,
+        mediaTypes: ["images"],
+        quality: 0.6,
         base64: true,
         allowsEditing: false,
+        exif: false,
       });
       if (!result.canceled && result.assets[0]) {
-        await processImage(result.assets[0].uri, result.assets[0].base64 ?? '');
+        await processImage(result.assets[0].uri, result.assets[0].base64 ?? "");
       }
     } catch {
-      Alert.alert('Error', 'No se pudo acceder a la galería.');
+      Alert.alert("Error", "No se pudo acceder a la galeria.");
     }
   };
 
@@ -108,7 +101,7 @@ export default function ScanScreen() {
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingTitle, { color: colors.foreground }]}>{status}</Text>
           <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>
-            Extrayendo información de la etiqueta...
+            Extrayendo informacion de la etiqueta...
           </Text>
         </View>
       </View>
@@ -129,11 +122,11 @@ export default function ScanScreen() {
         <View style={[styles.infoBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
           <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
           <Text style={[styles.infoText, { color: colors.foreground }]}>
-            Haz una foto de la etiqueta frontal. El OCR extraerá automáticamente el nombre, añada, alcohol y otras características.
+            Haz una foto clara de la etiqueta frontal. El OCR intentara extraer nombre, bodega, anada, alcohol y otras caracteristicas.
           </Text>
         </View>
 
-        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>ELIGE UNA OPCIÓN</Text>
+        <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>ELIGE UNA OPCION</Text>
 
         <Pressable
           onPress={pickFromCamera}
@@ -149,7 +142,7 @@ export default function ScanScreen() {
           <View style={styles.optionInfo}>
             <Text style={[styles.optionTitle, { color: colors.foreground }]}>Hacer una foto</Text>
             <Text style={[styles.optionDesc, { color: colors.mutedForeground }]}>
-              Usa la cámara para fotografiar la etiqueta ahora
+              Usa la camara para fotografiar la etiqueta ahora
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.mutedForeground} />
@@ -167,16 +160,16 @@ export default function ScanScreen() {
             <Ionicons name="images" size={28} color="#FFF" />
           </View>
           <View style={styles.optionInfo}>
-            <Text style={[styles.optionTitle, { color: colors.foreground }]}>Elegir de la galería</Text>
+            <Text style={[styles.optionTitle, { color: colors.foreground }]}>Elegir de la galeria</Text>
             <Text style={[styles.optionDesc, { color: colors.mutedForeground }]}>
-              Selecciona una foto existente de tu galería
+              Selecciona una foto existente de tu galeria
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.mutedForeground} />
         </Pressable>
 
         <Pressable
-          onPress={() => router.replace('/add-wine')}
+          onPress={() => router.replace("/add-wine")}
           style={({ pressed }) => [
             styles.skipBtn,
             { borderColor: colors.border, borderRadius: colors.radius },
@@ -189,7 +182,7 @@ export default function ScanScreen() {
         <View style={[styles.disclaimerBox, { backgroundColor: colors.muted, borderRadius: colors.radius }]}>
           <Ionicons name="sparkles-outline" size={16} color={colors.mutedForeground} />
           <Text style={[styles.disclaimerText, { color: colors.mutedForeground }]}>
-            El OCR usa Tesseract de forma gratuita. Los resultados dependen de la calidad de la foto. Siempre podrás corregir los datos manualmente.
+            Los resultados dependen de la calidad de la foto. Siempre podras corregir los datos manualmente.
           </Text>
         </View>
       </View>
@@ -199,42 +192,42 @@ export default function ScanScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  loading: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32 },
-  loadingCard: { padding: 40, alignItems: 'center', gap: 16, width: '100%', maxWidth: 320 },
-  loadingTitle: { fontSize: 18, fontFamily: 'Inter_600SemiBold' },
-  loadingText: { fontSize: 14, fontFamily: 'Inter_400Regular', textAlign: 'center' },
+  loading: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
+  loadingCard: { padding: 40, alignItems: "center", gap: 16, width: "100%", maxWidth: 320 },
+  loadingTitle: { fontSize: 18, fontFamily: "Inter_600SemiBold" },
+  loadingText: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center" },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingBottom: 16,
     borderBottomWidth: 1,
   },
-  backBtn: { width: 40, alignItems: 'flex-start' },
-  headerTitle: { fontSize: 17, fontFamily: 'Inter_600SemiBold' },
+  backBtn: { width: 40, alignItems: "flex-start" },
+  headerTitle: { fontSize: 17, fontFamily: "Inter_600SemiBold" },
   content: { flex: 1, padding: 20, gap: 16 },
-  infoBox: { flexDirection: 'row', padding: 14, gap: 10, alignItems: 'flex-start' },
-  infoText: { flex: 1, fontSize: 14, fontFamily: 'Inter_400Regular', lineHeight: 20 },
-  sectionLabel: { fontSize: 11, fontFamily: 'Inter_600SemiBold', letterSpacing: 1, marginTop: 8 },
+  infoBox: { flexDirection: "row", padding: 14, gap: 10, alignItems: "flex-start" },
+  infoText: { flex: 1, fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  sectionLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 1, marginTop: 8 },
   optionCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 16,
     gap: 14,
     borderWidth: 1,
-    shadowColor: '#000',
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
     shadowRadius: 6,
     elevation: 2,
   },
-  optionIcon: { width: 52, height: 52, borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  optionIcon: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },
   optionInfo: { flex: 1 },
-  optionTitle: { fontSize: 16, fontFamily: 'Inter_600SemiBold', marginBottom: 2 },
-  optionDesc: { fontSize: 13, fontFamily: 'Inter_400Regular', lineHeight: 18 },
-  skipBtn: { borderWidth: 1, padding: 14, alignItems: 'center', marginTop: 4 },
-  skipText: { fontSize: 15, fontFamily: 'Inter_400Regular' },
-  disclaimerBox: { flexDirection: 'row', padding: 12, gap: 8, alignItems: 'flex-start' },
-  disclaimerText: { flex: 1, fontSize: 12, fontFamily: 'Inter_400Regular', lineHeight: 17 },
+  optionTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold", marginBottom: 2 },
+  optionDesc: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 18 },
+  skipBtn: { borderWidth: 1, padding: 14, alignItems: "center", marginTop: 4 },
+  skipText: { fontSize: 15, fontFamily: "Inter_400Regular" },
+  disclaimerBox: { flexDirection: "row", padding: 12, gap: 8, alignItems: "flex-start" },
+  disclaimerText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 17 },
 });

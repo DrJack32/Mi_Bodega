@@ -25,9 +25,38 @@ class OCRRequest(BaseModel):
     imageBase64: str | None = None
 
 
+def clean_label_line(line: str) -> str:
+    return re.sub(r"\s+", " ", line).strip(" -.,;:|")
+
+
+def looks_like_noise(line: str) -> bool:
+    low = line.lower()
+    if len(line) < 3 or len(line) > 70:
+        return True
+    if re.fullmatch(r"[\d\s.,%/:-]+", line):
+        return True
+    noise_terms = (
+        "contains sulfites",
+        "contiene sulfitos",
+        "contains sulphites",
+        "produced by",
+        "bottled by",
+        "embotellado",
+        "imported by",
+        "product of",
+        "750",
+        "ml",
+        "vol",
+        "alc",
+    )
+    return any(term in low for term in noise_terms)
+
+
 def parse_wine_fields(text: str) -> dict:
     fields: dict[str, str] = {}
     normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    lines = [clean_label_line(line) for line in normalized.split("\n")]
+    label_lines = [line for line in lines if line and not looks_like_noise(line)]
 
     vintage = re.search(r"\b(19[5-9]\d|20[0-2]\d)\b", normalized)
     if vintage:
@@ -109,6 +138,20 @@ def parse_wine_fields(text: str) -> dict:
                 fields["region"] = region
                 break
 
+    if label_lines:
+        fields.setdefault("name", label_lines[0][:80])
+
+    if len(label_lines) > 1:
+        winery_pattern = r"\b(bodega|bodegas|winery|chateau|domaine|cantina|cellar|cellers|vina)\b"
+        winery_line = next(
+            (line for line in label_lines[1:7] if re.search(winery_pattern, line, re.I)),
+            None,
+        )
+        if winery_line:
+            fields.setdefault("winery", winery_line[:80])
+        elif label_lines[1] != fields.get("name"):
+            fields.setdefault("winery", label_lines[1][:80])
+
     return fields
 
 
@@ -137,10 +180,21 @@ async def ocr(payload: OCRRequest):
             )
             response.raise_for_status()
             data = response.json()
+            if data.get("IsErroredOnProcessing"):
+                error_message = data.get("ErrorMessage") or data.get("ErrorDetails") or "OCR service error"
+                if isinstance(error_message, list):
+                    error_message = "; ".join(str(item) for item in error_message)
+                return {"error": str(error_message), "fields": {}}
+
             raw_text = ""
             results = data.get("ParsedResults") or []
             if results:
                 raw_text = results[0].get("ParsedText", "")
+                parsed_error = results[0].get("ErrorMessage")
+                if parsed_error:
+                    return {"error": str(parsed_error), "fields": {}, "text": raw_text}
+            if not raw_text.strip():
+                return {"text": "", "fields": {}}
             fields = parse_wine_fields(raw_text)
             return {"text": raw_text, "fields": fields}
     except Exception as err:

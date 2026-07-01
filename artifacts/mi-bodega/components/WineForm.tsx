@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { useColors } from '@/hooks/useColors';
 import { WineFormData, WineType } from '@/contexts/WineContext';
+import { callOCR } from '@/lib/ocr';
 
 const WINE_TYPES: { value: WineType; label: string; color: string }[] = [
   { value: 'tinto', label: 'Tinto', color: '#7B2D3E' },
@@ -49,23 +50,6 @@ const EMPTY_FORM: WineFormData = {
   isFavorite: false,
   ocrUsed: false,
 };
-
-const API_BASE = process.env.EXPO_PUBLIC_DOMAIN
-  ? `https://${process.env.EXPO_PUBLIC_DOMAIN}`
-  : '';
-
-async function callOCR(base64: string): Promise<Partial<WineFormData>> {
-  const url = `${API_BASE}/api/ocr`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ imageBase64: base64 }),
-  });
-  if (!response.ok) throw new Error(`OCR HTTP ${response.status}`);
-  const data = await response.json() as { fields?: Partial<WineFormData>; error?: string };
-  if (data.error) throw new Error(data.error);
-  return data.fields ?? {};
-}
 
 interface WineFormProps {
   initialValues?: Partial<WineFormData>;
