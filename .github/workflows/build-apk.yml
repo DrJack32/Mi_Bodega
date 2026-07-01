@@ -54,23 +54,17 @@ jobs:
         working-directory: artifacts/mi-bodega
         run: pnpm exec expo prebuild --platform android --no-install --clean
 
-      - name: Bundle app code into debug APK
+      - name: Embed app code into debug APK
         working-directory: artifacts/mi-bodega
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("android/app/build.gradle")
-          text = path.read_text()
-          marker = '    bundleCommand = "export:embed"\n'
-          insertion = marker + "    debuggableVariants = []\n"
-
-          if "debuggableVariants = []" not in text:
-              if marker not in text:
-                  raise SystemExit("Could not find Expo bundleCommand in android/app/build.gradle")
-              text = text.replace(marker, insertion, 1)
-              path.write_text(text)
-          PY
+          mkdir -p android/app/src/main/assets android/app/src/main/res
+          pnpm exec expo export:embed \
+            --platform android \
+            --dev false \
+            --entry-file artifacts/mi-bodega/node_modules/expo-router/entry.js \
+            --bundle-output android/app/src/main/assets/index.android.bundle \
+            --assets-dest android/app/src/main/res \
+            --reset-cache
 
       - name: Check Android JS bundle
         working-directory: artifacts/mi-bodega
