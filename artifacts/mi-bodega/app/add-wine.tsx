@@ -53,6 +53,7 @@ export default function AddWineScreen() {
   return (
     <WineForm
       initialValues={initialValues}
+      isEditing={Boolean(params.editId)}
       onSave={handleSave}
       onCancel={() => router.back()}
     />

@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -53,6 +53,7 @@ const EMPTY_FORM: WineFormData = {
 
 interface WineFormProps {
   initialValues?: Partial<WineFormData>;
+  isEditing?: boolean;
   onSave: (data: WineFormData) => Promise<void>;
   onCancel: () => void;
 }
@@ -76,7 +77,7 @@ function FieldLabel({ label, optional }: { label: string; optional?: boolean }) 
   );
 }
 
-export function WineForm({ initialValues, onSave, onCancel }: WineFormProps) {
+export function WineForm({ initialValues, isEditing = false, onSave, onCancel }: WineFormProps) {
   const colors = useColors();
   const [form, setForm] = useState<WineFormData>({ ...EMPTY_FORM, ...initialValues });
   const [isSaving, setIsSaving] = useState(false);
@@ -85,6 +86,10 @@ export function WineForm({ initialValues, onSave, onCancel }: WineFormProps) {
 
   // Store base64 data keyed by photo URI for OCR
   const base64Cache = useRef<Map<string, string>>(new Map());
+
+  useEffect(() => {
+    setForm({ ...EMPTY_FORM, ...initialValues });
+  }, [initialValues]);
 
   function set<K extends keyof WineFormData>(key: K, value: WineFormData[K]) {
     setForm(prev => ({ ...prev, [key]: value }));
@@ -200,7 +205,7 @@ export function WineForm({ initialValues, onSave, onCancel }: WineFormProps) {
           <Text style={[styles.cancelText, { color: colors.mutedForeground }]}>Cancelar</Text>
         </Pressable>
         <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-          {initialValues?.name ? 'Editar vino' : 'Nuevo vino'}
+          {isEditing ? 'Editar vino' : 'Nuevo vino'}
         </Text>
         <Pressable
           onPress={handleSave}

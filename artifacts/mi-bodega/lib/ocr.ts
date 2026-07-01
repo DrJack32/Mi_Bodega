@@ -21,17 +21,20 @@ function normalizeApiBase() {
 }
 
 export const API_BASE = normalizeApiBase();
+const OCR_URL = process.env.EXPO_PUBLIC_OCR_URL?.trim();
 
 export async function callOCR(base64: string): Promise<Partial<WineFormData>> {
   if (!base64) {
     throw new Error("La imagen no incluye datos para analizar.");
   }
 
-  if (!API_BASE) {
+  const url = OCR_URL || (API_BASE ? `${API_BASE}/api/ocr` : "");
+
+  if (!url) {
     throw new Error("La app no tiene configurado el servidor de OCR.");
   }
 
-  const response = await fetch(`${API_BASE}/api/ocr`, {
+  const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ imageBase64: base64 }),
@@ -45,6 +48,9 @@ export async function callOCR(base64: string): Promise<Partial<WineFormData>> {
   }
 
   if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error("El servidor de OCR configurado no esta disponible.");
+    }
     throw new Error(data?.error || `OCR HTTP ${response.status}`);
   }
 

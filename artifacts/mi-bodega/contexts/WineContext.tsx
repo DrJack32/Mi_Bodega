@@ -30,6 +30,14 @@ export interface Wine {
 export type WineFormData = Omit<Wine, 'id' | 'createdAt'>;
 
 const STORAGE_KEY = '@mi_bodega_wines_v1';
+const BACKUP_VERSION = 1;
+
+type BackupFile = {
+  app: 'mi-bodega';
+  version: number;
+  exportedAt: string;
+  wines: Wine[];
+};
 
 interface WineContextValue {
   wines: Wine[];
@@ -39,6 +47,8 @@ interface WineContextValue {
   deleteWine: (id: string) => Promise<void>;
   toggleFavorite: (id: string) => Promise<void>;
   getWine: (id: string) => Wine | undefined;
+  createBackup: () => string;
+  restoreBackup: (raw: string) => Promise<number>;
 }
 
 const WineContext = createContext<WineContextValue | null>(null);
@@ -63,6 +73,40 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
   const persist = useCallback(async (updated: Wine[]) => {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   }, []);
+
+  const createBackup = useCallback(() => {
+    const backup: BackupFile = {
+      app: 'mi-bodega',
+      version: BACKUP_VERSION,
+      exportedAt: new Date().toISOString(),
+      wines,
+    };
+    return JSON.stringify(backup, null, 2);
+  }, [wines]);
+
+  const restoreBackup = useCallback(async (raw: string) => {
+    const parsed = JSON.parse(raw) as Partial<BackupFile> | Wine[];
+    const nextWines = Array.isArray(parsed) ? parsed : parsed.wines;
+
+    if (!Array.isArray(nextWines)) {
+      throw new Error('El archivo no contiene una copia valida de Mi Bodega.');
+    }
+
+    const cleaned = nextWines.map((wine) => ({
+      ...wine,
+      photos: Array.isArray(wine.photos) ? wine.photos : [],
+      rating: Number(wine.rating || 0),
+      wouldRepeat: typeof wine.wouldRepeat === 'boolean' ? wine.wouldRepeat : null,
+      isFavorite: Boolean(wine.isFavorite),
+      ocrUsed: Boolean(wine.ocrUsed),
+      createdAt: wine.createdAt || new Date().toISOString(),
+      id: wine.id || Date.now().toString() + Math.random().toString(36).substring(2, 9),
+    })) as Wine[];
+
+    setWines(cleaned);
+    await persist(cleaned);
+    return cleaned.length;
+  }, [persist]);
 
   const addWine = useCallback(async (data: WineFormData): Promise<Wine> => {
     const wine: Wine = {
@@ -97,7 +141,7 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
   const getWine = useCallback((id: string) => wines.find(w => w.id === id), [wines]);
 
   return (
-    <WineContext.Provider value={{ wines, isLoading, addWine, updateWine, deleteWine, toggleFavorite, getWine }}>
+    <WineContext.Provider value={{ wines, isLoading, addWine, updateWine, deleteWine, toggleFavorite, getWine, createBackup, restoreBackup }}>
       {children}
     </WineContext.Provider>
   );

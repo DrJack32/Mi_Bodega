@@ -70,6 +70,15 @@ export default function TabLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="data"
+        options={{
+          title: "Datos",
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="save" size={22} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }
