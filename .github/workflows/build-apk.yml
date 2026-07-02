@@ -96,11 +96,19 @@ jobs:
         if: failure()
         working-directory: artifacts/mi-bodega/android
         run: |
-          LOG_TAIL="$(tail -n 80 build-debug.log || true)"
-          LOG_TAIL="${LOG_TAIL//'%'/'%25'}"
-          LOG_TAIL="${LOG_TAIL//$'\r'/'%0D'}"
-          LOG_TAIL="${LOG_TAIL//$'\n'/'%0A'}"
-          echo "::error title=Gradle build failed::$LOG_TAIL"
+          LOG_SUMMARY="$(
+            {
+              echo "Relevant Gradle lines:"
+              grep -n -E "FAILURE|What went wrong|Execution failed|error:|e: |Unresolved|Cannot|Compilation error|Could not" build-debug.log || true
+              echo ""
+              echo "Log head:"
+              head -n 80 build-debug.log || true
+            } | tail -n 120
+          )"
+          LOG_SUMMARY="${LOG_SUMMARY//'%'/'%25'}"
+          LOG_SUMMARY="${LOG_SUMMARY//$'\r'/'%0D'}"
+          LOG_SUMMARY="${LOG_SUMMARY//$'\n'/'%0A'}"
+          echo "::error title=Gradle build failed::$LOG_SUMMARY"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
