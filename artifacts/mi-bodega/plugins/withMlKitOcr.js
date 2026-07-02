@@ -59,7 +59,7 @@ class MiBodegaMlKitOcrPackage : ReactPackage {
     return listOf(MiBodegaMlKitOcrModule(reactContext))
   }
 
-  override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> {
+  override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<in Nothing, in Nothing>> {
     return emptyList()
   }
 }
