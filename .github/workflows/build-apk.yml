@@ -79,7 +79,18 @@ jobs:
 
       - name: Build Debug APK
         working-directory: artifacts/mi-bodega/android
-        run: ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon --stacktrace --warning-mode summary
+        run: |
+          set -o pipefail
+          ./gradlew assembleDebug -PreactNativeArchitectures=arm64-v8a,armeabi-v7a --no-daemon --stacktrace --warning-mode summary 2>&1 | tee build-debug.log
+
+      - name: Upload Gradle build log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-build-log
+          path: artifacts/mi-bodega/android/build-debug.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
