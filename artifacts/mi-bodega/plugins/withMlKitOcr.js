@@ -4,7 +4,7 @@ const {
   withAppBuildGradle,
   withDangerousMod,
   withMainApplication,
-} = require("@expo/config-plugins");
+} = require("expo/config-plugins");
 
 const PACKAGE_NAME = "com.drjack32.mibodega";
 const MODULE_PACKAGE = `${PACKAGE_NAME}.mlkit`;
