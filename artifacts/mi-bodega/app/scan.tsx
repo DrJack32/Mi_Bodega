@@ -33,7 +33,7 @@ export default function ScanScreen() {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const fields = await callOCR(base64);
+      const fields = await callOCR(base64, uri);
       const hasData = Object.keys(fields).length > 0;
       setStatus("Listo");
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -101,7 +101,7 @@ export default function ScanScreen() {
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingTitle, { color: colors.foreground }]}>{status}</Text>
           <Text style={[styles.loadingText, { color: colors.mutedForeground }]}>
-            Extrayendo informacion de la etiqueta...
+            Leyendo la etiqueta en el dispositivo...
           </Text>
         </View>
       </View>

@@ -43,7 +43,8 @@
           "photosPermission": "Mi Bodega accede a tu galería para añadir fotos de tus vinos.",
           "cameraPermission": "Mi Bodega usa la cámara para fotografiar etiquetas de vino."
         }
-      ]
+      ],
+      "./plugins/withMlKitOcr"
     ],
     "experiments": {
       "typedRoutes": true,

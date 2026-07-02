@@ -132,7 +132,7 @@ export function WineForm({ initialValues, isEditing = false, onSave, onCancel }:
 
   const runOCROnPhoto = async (uri: string, index: number) => {
     const base64 = base64Cache.current.get(uri);
-    if (!base64) {
+    if (!base64 && Platform.OS !== 'android') {
       Alert.alert(
         'Sin datos de imagen',
         'No se puede leer esta foto para el OCR. Añade una foto nueva con el botón de cámara/galería.',
@@ -145,7 +145,7 @@ export function WineForm({ initialValues, isEditing = false, onSave, onCancel }:
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const fields = await callOCR(base64);
+      const fields = await callOCR(base64 ?? '', uri);
       const hasData = Object.keys(fields).length > 0;
       setForm(prev => ({
         ...prev,
@@ -161,7 +161,7 @@ export function WineForm({ initialValues, isEditing = false, onSave, onCancel }:
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      Alert.alert('Error al extraer información', `${msg}\n\nComprueba tu conexión e inténtalo de nuevo.`);
+      Alert.alert('Error al extraer información', `${msg}\n\nPrueba con una foto frontal, bien iluminada y enfocada.`);
     } finally {
       setIsOcrLoading(false);
       setOcrPhotoIndex(null);
@@ -262,7 +262,7 @@ export function WineForm({ initialValues, isEditing = false, onSave, onCancel }:
         {form.photos.length > 0 && (
           <View style={styles.photosGrid}>
             {form.photos.map((uri, i) => {
-              const hasBase64 = base64Cache.current.has(uri);
+              const canRunOcr = Platform.OS === 'android' || base64Cache.current.has(uri);
               const isThisLoading = isOcrLoading && ocrPhotoIndex === i;
               return (
                 <View key={uri + i} style={[styles.photoCard, { backgroundColor: colors.card, borderColor: colors.border, borderRadius: colors.radius }]}>
@@ -270,7 +270,7 @@ export function WineForm({ initialValues, isEditing = false, onSave, onCancel }:
 
                   <View style={styles.photoCardActions}>
                     {/* OCR extraction button — main CTA */}
-                    {hasBase64 && (
+                    {canRunOcr && (
                       <Pressable
                         onPress={() => runOCROnPhoto(uri, i)}
                         disabled={isOcrLoading}
