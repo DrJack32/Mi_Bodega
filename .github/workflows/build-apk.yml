@@ -92,6 +92,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Annotate Gradle failure
+        if: failure()
+        working-directory: artifacts/mi-bodega/android
+        run: |
+          LOG_TAIL="$(tail -n 80 build-debug.log || true)"
+          LOG_TAIL="${LOG_TAIL//'%'/'%25'}"
+          LOG_TAIL="${LOG_TAIL//$'\r'/'%0D'}"
+          LOG_TAIL="${LOG_TAIL//$'\n'/'%0A'}"
+          echo "::error title=Gradle build failed::$LOG_TAIL"
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
