@@ -80,9 +80,14 @@ export default function WineDetailScreen() {
           text: 'Eliminar',
           style: 'destructive',
           onPress: async () => {
-            await deleteWine(wine.id);
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            router.back();
+            try {
+              await deleteWine(wine.id);
+              await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+              router.back();
+            } catch (error) {
+              const message = error instanceof Error ? error.message : 'No se pudo eliminar el vino.';
+              Alert.alert('No se pudo eliminar', `${message}\n\nEl vino se ha conservado.`);
+            }
           },
         },
       ]
@@ -126,8 +131,13 @@ export default function WineDetailScreen() {
             <View style={styles.heroActions}>
               <Pressable
                 onPress={async () => {
-                  await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  await toggleFavorite(wine.id);
+                  try {
+                    await toggleFavorite(wine.id);
+                    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  } catch (error) {
+                    const message = error instanceof Error ? error.message : 'No se pudo guardar el cambio.';
+                    Alert.alert('No se pudo actualizar', message);
+                  }
                 }}
                 style={[styles.circleBtn, { backgroundColor: 'rgba(0,0,0,0.4)' }]}
               >

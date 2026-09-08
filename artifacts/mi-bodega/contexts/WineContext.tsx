@@ -1,154 +1,332 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Crypto from "expo-crypto";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
-export type WineType = 'tinto' | 'blanco' | 'rosado' | 'espumoso' | 'generoso' | 'dulce' | 'orange' | 'otro';
+import {
+  createBackupArchive,
+  inspectBackup as inspectBackupFile,
+  restoreBackup as restoreBackupFile,
+  type BackupPreview,
+  type RestoreMode,
+  type RestoreResult,
+} from "@/lib/backup";
+import {
+  deleteManagedPhotos,
+  persistPhoto,
+  persistPhotos,
+  pruneOrphanPhotos,
+} from "@/lib/photoStorage";
+import {
+  normalizeWineRecords,
+  type Wine,
+  type WineFormData,
+  type WineType,
+} from "@/lib/wineData";
 
-export interface Wine {
-  id: string;
-  photos: string[];
-  name: string;
-  winery: string;
-  vintage: string;
-  type: WineType;
-  country: string;
-  region: string;
-  denomination: string;
-  grapes: string;
-  alcohol: string;
-  volume: string;
-  date: string;
-  location: string;
-  price: string;
-  rating: number;
-  wouldRepeat: boolean | null;
-  notes: string;
-  isFavorite: boolean;
-  createdAt: string;
-  ocrUsed: boolean;
-}
-
-export type WineFormData = Omit<Wine, 'id' | 'createdAt'>;
-
-const STORAGE_KEY = '@mi_bodega_wines_v1';
-const BACKUP_VERSION = 1;
-
-type BackupFile = {
-  app: 'mi-bodega';
-  version: number;
-  exportedAt: string;
-  wines: Wine[];
+export type {
+  BackupPreview,
+  RestoreMode,
+  RestoreResult,
+  Wine,
+  WineFormData,
+  WineType,
 };
+
+const STORAGE_KEY = "@mi_bodega_wines_v1";
+const RECOVERY_KEY = "@mi_bodega_wines_recovery_v1";
 
 interface WineContextValue {
   wines: Wine[];
   isLoading: boolean;
+  storageWarning: string | null;
   addWine: (data: WineFormData) => Promise<Wine>;
   updateWine: (id: string, data: Partial<WineFormData>) => Promise<void>;
   deleteWine: (id: string) => Promise<void>;
   toggleFavorite: (id: string) => Promise<void>;
   getWine: (id: string) => Wine | undefined;
-  createBackup: () => string;
-  restoreBackup: (raw: string) => Promise<number>;
+  createBackup: () => ReturnType<typeof createBackupArchive>;
+  inspectBackup: (uri: string, name: string) => Promise<BackupPreview>;
+  restoreBackup: (
+    preview: BackupPreview,
+    mode: RestoreMode,
+  ) => Promise<RestoreResult>;
 }
 
+type Mutation<T> = (current: Wine[]) => Promise<T>;
+
 const WineContext = createContext<WineContextValue | null>(null);
+
+function allPhotoUris(wines: Wine[]) {
+  return wines.flatMap((wine) => wine.photos);
+}
+
+function newlyCreatedPhotos(before: string[], after: string[]) {
+  const existing = new Set(before);
+  return after.filter((uri) => !existing.has(uri));
+}
 
 export function WineProvider({ children }: { children: React.ReactNode }) {
   const [wines, setWines] = useState<Wine[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [storageWarning, setStorageWarning] = useState<string | null>(null);
+  const winesRef = useRef<Wine[]>([]);
+  const mutationQueue = useRef<Promise<void>>(Promise.resolve());
+  const mountedRef = useRef(true);
 
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
-      if (raw) {
-        try {
-          setWines(JSON.parse(raw) as Wine[]);
-        } catch {
-          setWines([]);
-        }
-      }
-      setIsLoading(false);
-    });
+  const setCurrentWines = useCallback((next: Wine[]) => {
+    winesRef.current = next;
+    if (mountedRef.current) setWines(next);
   }, []);
 
   const persist = useCallback(async (updated: Wine[]) => {
     await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   }, []);
 
-  const createBackup = useCallback(() => {
-    const backup: BackupFile = {
-      app: 'mi-bodega',
-      version: BACKUP_VERSION,
-      exportedAt: new Date().toISOString(),
-      wines,
-    };
-    return JSON.stringify(backup, null, 2);
-  }, [wines]);
+  const commit = useCallback(
+    async (updated: Wine[]) => {
+      await persist(updated);
+      setCurrentWines(updated);
+    },
+    [persist, setCurrentWines],
+  );
 
-  const restoreBackup = useCallback(async (raw: string) => {
-    const parsed = JSON.parse(raw) as Partial<BackupFile> | Wine[];
-    const nextWines = Array.isArray(parsed) ? parsed : parsed.wines;
+  const runMutation = useCallback(function enqueueMutation<T>(
+    operation: Mutation<T>,
+  ): Promise<T> {
+    const task = mutationQueue.current.then(() => operation(winesRef.current));
+    mutationQueue.current = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    return task;
+  }, []);
 
-    if (!Array.isArray(nextWines)) {
-      throw new Error('El archivo no contiene una copia valida de Mi Bodega.');
+  useEffect(() => {
+    mountedRef.current = true;
+    let cancelled = false;
+
+    async function load() {
+      try {
+        const raw = await AsyncStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+
+        let parsed: unknown;
+        let normalized: Wine[];
+        try {
+          parsed = JSON.parse(raw);
+          normalized = normalizeWineRecords(parsed);
+        } catch {
+          let recoverySaved = false;
+          try {
+            await AsyncStorage.setItem(RECOVERY_KEY, raw);
+            recoverySaved = true;
+          } catch {
+            // El valor original sigue en su clave mientras no se guarden datos nuevos.
+          }
+          if (!cancelled) {
+            setStorageWarning(
+              recoverySaved
+                ? "Los datos guardados no se pueden leer. Se ha reservado una copia interna para facilitar su recuperacion."
+                : "Los datos guardados no se pueden leer. No se han sobrescrito para facilitar su recuperacion.",
+            );
+          }
+          return;
+        }
+
+        let migratedCount = 0;
+        let unavailableCount = 0;
+        const createdPhotoUris: string[] = [];
+        const migrated: Wine[] = [];
+
+        for (const wine of normalized) {
+          const photos: string[] = [];
+          for (const uri of wine.photos) {
+            try {
+              const persisted = await persistPhoto(uri);
+              photos.push(persisted);
+              if (persisted !== uri) {
+                migratedCount += 1;
+                createdPhotoUris.push(persisted);
+              }
+            } catch {
+              // Conservamos la referencia: borrar silenciosamente una foto impediria recuperarla.
+              photos.push(uri);
+              unavailableCount += 1;
+            }
+          }
+          migrated.push({ ...wine, photos });
+        }
+
+        try {
+          const needsNormalization =
+            JSON.stringify(parsed) !== JSON.stringify(normalized);
+          if (migratedCount > 0 || needsNormalization) await persist(migrated);
+          if (!cancelled) setCurrentWines(migrated);
+        } catch {
+          deleteManagedPhotos(createdPhotoUris);
+          if (!cancelled) {
+            setCurrentWines(normalized);
+            setStorageWarning(
+              "No se pudieron consolidar las fotografias en el almacenamiento permanente.",
+            );
+          }
+          return;
+        }
+
+        if (!cancelled && unavailableCount > 0) {
+          setStorageWarning(
+            `${unavailableCount === 1 ? "Una fotografia guardada no esta disponible" : `${unavailableCount} fotografias guardadas no estan disponibles`}. Los vinos se han conservado.`,
+          );
+        }
+      } catch {
+        if (!cancelled) {
+          setStorageWarning(
+            "No se pudo acceder al almacenamiento local. No se ha modificado ningun dato.",
+          );
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
     }
 
-    const cleaned = nextWines.map((wine) => ({
-      ...wine,
-      photos: Array.isArray(wine.photos) ? wine.photos : [],
-      rating: Number(wine.rating || 0),
-      wouldRepeat: typeof wine.wouldRepeat === 'boolean' ? wine.wouldRepeat : null,
-      isFavorite: Boolean(wine.isFavorite),
-      ocrUsed: Boolean(wine.ocrUsed),
-      createdAt: wine.createdAt || new Date().toISOString(),
-      id: wine.id || Date.now().toString() + Math.random().toString(36).substring(2, 9),
-    })) as Wine[];
-
-    setWines(cleaned);
-    await persist(cleaned);
-    return cleaned.length;
-  }, [persist]);
-
-  const addWine = useCallback(async (data: WineFormData): Promise<Wine> => {
-    const wine: Wine = {
-      ...data,
-      id: Date.now().toString() + Math.random().toString(36).substring(2, 9),
-      createdAt: new Date().toISOString(),
+    load();
+    return () => {
+      cancelled = true;
+      mountedRef.current = false;
     };
-    const updated = [wine, ...wines];
-    setWines(updated);
-    await persist(updated);
-    return wine;
-  }, [wines, persist]);
+  }, [persist, setCurrentWines]);
 
-  const updateWine = useCallback(async (id: string, data: Partial<WineFormData>) => {
-    const updated = wines.map(w => w.id === id ? { ...w, ...data } : w);
-    setWines(updated);
-    await persist(updated);
-  }, [wines, persist]);
+  const createBackup = useCallback(async () => {
+    await mutationQueue.current;
+    return createBackupArchive(winesRef.current);
+  }, []);
 
-  const deleteWine = useCallback(async (id: string) => {
-    const updated = wines.filter(w => w.id !== id);
-    setWines(updated);
-    await persist(updated);
-  }, [wines, persist]);
+  const inspectBackup = useCallback(async (uri: string, name: string) => {
+    await mutationQueue.current;
+    return inspectBackupFile(uri, name, winesRef.current);
+  }, []);
 
-  const toggleFavorite = useCallback(async (id: string) => {
-    const updated = wines.map(w => w.id === id ? { ...w, isFavorite: !w.isFavorite } : w);
-    setWines(updated);
-    await persist(updated);
-  }, [wines, persist]);
+  const restoreBackup = useCallback(
+    (preview: BackupPreview, mode: RestoreMode) =>
+      runMutation(async (current) => {
+        const result = await restoreBackupFile(preview, current, mode);
+        try {
+          await commit(result.wines);
+        } catch (error) {
+          deleteManagedPhotos(result.createdPhotoUris);
+          throw error;
+        }
+        pruneOrphanPhotos(allPhotoUris(result.wines));
+        return result;
+      }),
+    [commit, runMutation],
+  );
 
-  const getWine = useCallback((id: string) => wines.find(w => w.id === id), [wines]);
+  const addWine = useCallback(
+    (data: WineFormData): Promise<Wine> =>
+      runMutation(async (current) => {
+        const photos = await persistPhotos(data.photos);
+        const createdPhotoUris = newlyCreatedPhotos(data.photos, photos);
+        const wine: Wine = {
+          ...data,
+          photos,
+          id: Crypto.randomUUID(),
+          createdAt: new Date().toISOString(),
+        };
+        try {
+          await commit([wine, ...current]);
+          return wine;
+        } catch (error) {
+          deleteManagedPhotos(createdPhotoUris);
+          throw error;
+        }
+      }),
+    [commit, runMutation],
+  );
+
+  const updateWine = useCallback(
+    (id: string, data: Partial<WineFormData>) =>
+      runMutation(async (current) => {
+        const original = current.find((wine) => wine.id === id);
+        if (!original)
+          throw new Error("El vino que quieres editar ya no existe.");
+
+        const photos = data.photos
+          ? await persistPhotos(data.photos)
+          : original.photos;
+        const createdPhotoUris = data.photos
+          ? newlyCreatedPhotos(data.photos, photos)
+          : [];
+        const updated = current.map((wine) =>
+          wine.id === id ? { ...wine, ...data, photos } : wine,
+        );
+        try {
+          await commit(updated);
+        } catch (error) {
+          deleteManagedPhotos(createdPhotoUris);
+          throw error;
+        }
+        pruneOrphanPhotos(allPhotoUris(updated));
+      }),
+    [commit, runMutation],
+  );
+
+  const deleteWine = useCallback(
+    (id: string) =>
+      runMutation(async (current) => {
+        const updated = current.filter((wine) => wine.id !== id);
+        await commit(updated);
+        pruneOrphanPhotos(allPhotoUris(updated));
+      }),
+    [commit, runMutation],
+  );
+
+  const toggleFavorite = useCallback(
+    (id: string) =>
+      runMutation(async (current) => {
+        const updated = current.map((wine) =>
+          wine.id === id ? { ...wine, isFavorite: !wine.isFavorite } : wine,
+        );
+        await commit(updated);
+      }),
+    [commit, runMutation],
+  );
+
+  const getWine = useCallback(
+    (id: string) => wines.find((wine) => wine.id === id),
+    [wines],
+  );
 
   return (
-    <WineContext.Provider value={{ wines, isLoading, addWine, updateWine, deleteWine, toggleFavorite, getWine, createBackup, restoreBackup }}>
-      {children}
+    <WineContext.Provider
+      value={{
+        wines,
+        isLoading,
+        storageWarning,
+        addWine,
+        updateWine,
+        deleteWine,
+        toggleFavorite,
+        getWine,
+        createBackup,
+        inspectBackup,
+        restoreBackup,
+      }}
+    >
+      {isLoading ? null : children}
     </WineContext.Provider>
   );
 }
 
 export function useWines() {
-  const ctx = useContext(WineContext);
-  if (!ctx) throw new Error('useWines must be used within WineProvider');
-  return ctx;
+  const context = useContext(WineContext);
+  if (!context) throw new Error("useWines must be used within WineProvider");
+  return context;
 }

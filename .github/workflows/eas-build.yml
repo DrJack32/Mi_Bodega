@@ -21,10 +21,16 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 11.19.0
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate dependencies, types and data tests
+        run: |
+          pnpm --filter @workspace/mi-bodega exec expo install --check
+          pnpm --filter @workspace/mi-bodega run typecheck
+          pnpm --filter @workspace/mi-bodega run test
 
       - name: Setup Expo & EAS
         uses: expo/expo-github-action@v8
@@ -59,4 +65,4 @@ jobs:
         with:
           name: mi-bodega-android-apk
           path: artifacts/mi-bodega/mi-bodega.apk
-          retention-days: 30
+          retention-days: 90

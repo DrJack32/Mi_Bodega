@@ -27,13 +27,13 @@ export default function ScanScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const processImage = async (uri: string, base64: string) => {
+  const processImage = async (uri: string) => {
     setIsProcessing(true);
     setStatus("Analizando etiqueta...");
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const fields = await callOCR(base64, uri);
+      const fields = await callOCR(uri);
       const hasData = Object.keys(fields).length > 0;
       setStatus("Listo");
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -65,12 +65,11 @@ export default function ScanScreen() {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ["images"],
         quality: 0.6,
-        base64: true,
         allowsEditing: false,
         exif: false,
       });
       if (!result.canceled && result.assets[0]) {
-        await processImage(result.assets[0].uri, result.assets[0].base64 ?? "");
+        await processImage(result.assets[0].uri);
       }
     } catch {
       Alert.alert("Error", "No se pudo acceder a la camara.");
@@ -82,12 +81,11 @@ export default function ScanScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         quality: 0.6,
-        base64: true,
         allowsEditing: false,
         exif: false,
       });
       if (!result.canceled && result.assets[0]) {
-        await processImage(result.assets[0].uri, result.assets[0].base64 ?? "");
+        await processImage(result.assets[0].uri);
       }
     } catch {
       Alert.alert("Error", "No se pudo acceder a la galeria.");

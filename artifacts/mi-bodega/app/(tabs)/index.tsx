@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WineCard } from '@/components/WineCard';
 import { Wine, WineType, useWines } from '@/contexts/WineContext';
 import { useColors } from '@/hooks/useColors';
+import { normalizePriceNumber } from '@/lib/wineData';
 
 const FILTER_OPTIONS: { label: string; value: WineType | 'all' }[] = [
   { label: 'Todos', value: 'all' },
@@ -68,7 +69,7 @@ export default function BibliotecaScreen() {
     list.sort((a, b) => {
       switch (sortBy) {
         case 'rating': return b.rating - a.rating;
-        case 'price': return parseFloat(b.price || '0') - parseFloat(a.price || '0');
+        case 'price': return normalizePriceNumber(b.price) - normalizePriceNumber(a.price);
         case 'name': return a.name.localeCompare(b.name);
         default: return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       }

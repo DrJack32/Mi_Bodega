@@ -13,9 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
-      # Dominio del backend para el OCR (se inyecta en el bundle JS en tiempo de build).
-      # Cámbialo por tu backend desplegado si lo mueves a producción.
-      EXPO_PUBLIC_DOMAIN: 313fe69c-0ee6-4106-9924-e70da315f732.preview.emergentagent.com
       NODE_OPTIONS: --max_old_space_size=6144
       GRADLE_OPTS: -Dorg.gradle.workers.max=2
 
@@ -26,7 +23,7 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: 11.19.0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -48,7 +45,13 @@ jobs:
           sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0" "ndk;27.1.12297006" "cmake;3.22.1"
 
       - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+        run: pnpm install --frozen-lockfile
+
+      - name: Validate dependencies, types and data tests
+        run: |
+          pnpm --filter @workspace/mi-bodega exec expo install --check
+          pnpm --filter @workspace/mi-bodega run typecheck
+          pnpm --filter @workspace/mi-bodega run test
 
       - name: Expo prebuild (Android)
         working-directory: artifacts/mi-bodega
@@ -116,4 +119,4 @@ jobs:
           name: mi-bodega-android-apk
           path: artifacts/mi-bodega/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90

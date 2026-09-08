@@ -40,6 +40,9 @@ class MiBodegaMlKitOcrModule(
         .addOnFailureListener { error ->
           promise.reject("MLKIT_OCR_FAILED", error.message, error)
         }
+        .addOnCompleteListener {
+          recognizer.close()
+        }
     } catch (error: Exception) {
       promise.reject("MLKIT_OCR_INPUT_FAILED", error.message, error)
     }

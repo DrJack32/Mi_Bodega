@@ -4,6 +4,7 @@ import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useWines } from '@/contexts/WineContext';
 import { useColors } from '@/hooks/useColors';
+import { normalizePriceNumber } from '@/lib/wineData';
 
 const TYPE_LABELS: Record<string, string> = {
   tinto: 'Tinto', blanco: 'Blanco', rosado: 'Rosado', espumoso: 'Espumoso',
@@ -48,11 +49,11 @@ export default function EstadisticasScreen() {
     const total = wines.length;
     const rated = wines.filter(w => w.rating > 0);
     const avgRating = rated.length > 0 ? (rated.reduce((s, w) => s + w.rating, 0) / rated.length).toFixed(1) : '—';
-    const priced = wines.filter(w => parseFloat(w.price) > 0);
+    const priced = wines.filter(w => normalizePriceNumber(w.price) > 0);
     const avgPrice = priced.length > 0
-      ? (priced.reduce((s, w) => s + parseFloat(w.price), 0) / priced.length).toFixed(2)
+      ? (priced.reduce((s, w) => s + normalizePriceNumber(w.price), 0) / priced.length).toFixed(2)
       : '—';
-    const totalSpend = priced.reduce((s, w) => s + parseFloat(w.price), 0);
+    const totalSpend = priced.reduce((s, w) => s + normalizePriceNumber(w.price), 0);
 
     const byType = Object.entries(
       wines.reduce<Record<string, number>>((acc, w) => { acc[w.type] = (acc[w.type] ?? 0) + 1; return acc; }, {})
