@@ -18,27 +18,27 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           version: 11.19.0
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
 
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android SDK components (NDK, CMake, platform)
         run: |
@@ -89,7 +89,7 @@ jobs:
 
       - name: Upload Gradle build log
         if: failure() && steps.build_apk.conclusion == 'failure'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: gradle-build-log
           path: artifacts/mi-bodega/android/build-debug.log
@@ -115,7 +115,7 @@ jobs:
           echo "::error title=Gradle build failed::$LOG_SUMMARY"
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: mi-bodega-android-apk
           path: artifacts/mi-bodega/android/app/build/outputs/apk/debug/*.apk
