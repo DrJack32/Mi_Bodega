@@ -118,7 +118,7 @@ export function WineForm({
     try {
       const opts: ImagePicker.ImagePickerOptions = {
         mediaTypes: ["images"],
-        quality: 0.45,
+        quality: 0.85,
         allowsEditing: false,
         exif: false,
       };
@@ -163,11 +163,17 @@ export function WineForm({
     try {
       const fields = await callOCR(uri);
       const hasData = Object.keys(fields).length > 0;
-      setForm((prev) => ({
-        ...prev,
-        ...(hasData ? fields : {}),
-        ocrUsed: hasData,
-      }));
+      setForm((prev) => {
+        const safeFields = Object.fromEntries(
+          Object.entries(fields).filter(([key]) => {
+            if (isEditing) return !prev[key as keyof WineFormData];
+            if (key === 'type') return prev.type === EMPTY_FORM.type;
+            if (key === 'volume') return prev.volume === EMPTY_FORM.volume;
+            return !prev[key as keyof WineFormData];
+          }),
+        );
+        return { ...prev, ...safeFields, ocrUsed: prev.ocrUsed || hasData };
+      });
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (!hasData) {
         Alert.alert(

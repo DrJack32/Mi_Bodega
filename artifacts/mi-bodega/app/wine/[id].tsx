@@ -3,7 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Platform,
@@ -12,6 +12,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
@@ -51,9 +52,22 @@ export default function WineDetailScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const { width: photoWidth } = useWindowDimensions();
   const { getWine, toggleFavorite, deleteWine } = useWines();
   const wine = getWine(id ?? '');
   const [photoIndex, setPhotoIndex] = useState(0);
+  const photoScroll = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    setPhotoIndex(0);
+    photoScroll.current?.scrollTo({ x: 0, animated: false });
+  }, [id, wine?.photos.length]);
+
+  const goToPhoto = (index: number) => {
+    if (!wine || index < 0 || index >= wine.photos.length) return;
+    setPhotoIndex(index);
+    photoScroll.current?.scrollTo({ x: index * photoWidth, animated: true });
+  };
 
   if (!wine) {
     return (
@@ -100,18 +114,55 @@ export default function WineDetailScreen() {
         <View style={styles.photoArea}>
           {wine.photos.length > 0 ? (
             <>
-              <Image source={{ uri: wine.photos[photoIndex] }} style={styles.heroPhoto} contentFit="cover" />
+              <ScrollView
+                ref={photoScroll}
+                horizontal
+                pagingEnabled
+                showsHorizontalScrollIndicator={false}
+                nestedScrollEnabled
+                scrollEnabled={wine.photos.length > 1}
+                onScroll={(event) => {
+                  const index = Math.round(event.nativeEvent.contentOffset.x / photoWidth);
+                  if (index !== photoIndex && index >= 0 && index < wine.photos.length) setPhotoIndex(index);
+                }}
+                scrollEventThrottle={32}
+                accessibilityLabel="Fotografías del vino. Desliza para ver las demás"
+              >
+                {wine.photos.map((uri, index) => (
+                  <Image
+                    key={`${index}-${uri}`}
+                    source={{ uri }}
+                    style={[styles.heroPhoto, { width: photoWidth }]}
+                    contentFit="cover"
+                  />
+                ))}
+              </ScrollView>
               <LinearGradient
                 colors={['transparent', 'rgba(0,0,0,0.7)']}
                 style={StyleSheet.absoluteFill}
+                pointerEvents="none"
               />
               {wine.photos.length > 1 && (
-                <View style={styles.photoDots}>
-                  {wine.photos.map((_, i) => (
-                    <Pressable key={i} onPress={() => setPhotoIndex(i)}>
-                      <View style={[styles.photoDot, { backgroundColor: i === photoIndex ? '#FFF' : 'rgba(255,255,255,0.4)' }]} />
-                    </Pressable>
-                  ))}
+                <View style={styles.photoControls} pointerEvents="box-none">
+                  <Pressable
+                    onPress={() => goToPhoto(photoIndex - 1)}
+                    disabled={photoIndex === 0}
+                    accessibilityRole="button"
+                    accessibilityLabel="Foto anterior"
+                    style={[styles.photoArrow, photoIndex === 0 && styles.photoArrowDisabled]}
+                  >
+                    <Ionicons name="chevron-back" size={24} color="#FFF" />
+                  </Pressable>
+                  <Text style={styles.photoCount}>{photoIndex + 1} / {wine.photos.length}</Text>
+                  <Pressable
+                    onPress={() => goToPhoto(photoIndex + 1)}
+                    disabled={photoIndex === wine.photos.length - 1}
+                    accessibilityRole="button"
+                    accessibilityLabel="Foto siguiente"
+                    style={[styles.photoArrow, photoIndex === wine.photos.length - 1 && styles.photoArrowDisabled]}
+                  >
+                    <Ionicons name="chevron-forward" size={24} color="#FFF" />
+                  </Pressable>
                 </View>
               )}
             </>
@@ -266,10 +317,12 @@ const styles = StyleSheet.create({
   notFoundText: { fontSize: 18, fontFamily: 'Inter_500Medium' },
   backText: { fontSize: 16, fontFamily: 'Inter_400Regular' },
   photoArea: { height: 320, position: 'relative' },
-  heroPhoto: { width: '100%', height: '100%' },
+  heroPhoto: { height: 320 },
   photoPlaceholder: { width: '100%', height: '100%', alignItems: 'center', justifyContent: 'center' },
-  photoDots: { position: 'absolute', bottom: 60, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 },
-  photoDot: { width: 6, height: 6, borderRadius: 3 },
+  photoControls: { position: 'absolute', bottom: 56, left: 12, right: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  photoArrow: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center' },
+  photoArrowDisabled: { opacity: 0.3 },
+  photoCount: { color: '#FFF', backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, overflow: 'hidden', fontSize: 13, fontFamily: 'Inter_600SemiBold' },
   heroOverlay: { position: 'absolute', top: 0, left: 0, right: 0, flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 12 },
   heroActions: { flexDirection: 'row', gap: 8 },
   circleBtn: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },

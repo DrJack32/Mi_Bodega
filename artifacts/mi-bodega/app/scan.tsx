@@ -64,7 +64,7 @@ export default function ScanScreen() {
     try {
       const result = await ImagePicker.launchCameraAsync({
         mediaTypes: ["images"],
-        quality: 0.6,
+        quality: 0.9,
         allowsEditing: false,
         exif: false,
       });
@@ -80,7 +80,7 @@ export default function ScanScreen() {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
-        quality: 0.6,
+        quality: 0.9,
         allowsEditing: false,
         exif: false,
       });
@@ -120,7 +120,7 @@ export default function ScanScreen() {
         <View style={[styles.infoBox, { backgroundColor: colors.secondary, borderRadius: colors.radius }]}>
           <Ionicons name="information-circle-outline" size={20} color={colors.primary} />
           <Text style={[styles.infoText, { color: colors.foreground }]}>
-            Haz una foto clara de la etiqueta frontal. El OCR intentara extraer nombre, bodega, anada, alcohol y otras caracteristicas.
+            Haz una foto nítida y frontal de la etiqueta, con buena luz y sin reflejos. El lector local intentará extraer los datos escritos; compruébalos antes de guardar.
           </Text>
         </View>
 
@@ -180,7 +180,7 @@ export default function ScanScreen() {
         <View style={[styles.disclaimerBox, { backgroundColor: colors.muted, borderRadius: colors.radius }]}>
           <Ionicons name="sparkles-outline" size={16} color={colors.mutedForeground} />
           <Text style={[styles.disclaimerText, { color: colors.mutedForeground }]}>
-            Los resultados dependen de la calidad de la foto. Siempre podras corregir los datos manualmente.
+            Esta función lee texto en el móvil: no reconoce el vino mediante una base de datos ni envía la foto a Internet. Los campos dudosos se dejan vacíos para que puedas completarlos.
           </Text>
         </View>
       </View>

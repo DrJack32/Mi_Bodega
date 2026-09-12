@@ -10,22 +10,18 @@ function removeAccents(text: string) {
 
 function looksLikeNoise(line: string) {
   const low = removeAccents(line.toLowerCase());
-  if (line.length < 3 || line.length > 70) return true;
-  if (/^[\d\s.,%/:-]+$/.test(line)) return true;
-  return [
-    "contains sulfites",
-    "contiene sulfitos",
-    "contains sulphites",
-    "produced by",
-    "bottled by",
-    "embotellado",
-    "imported by",
-    "product of",
-    "750",
-    "ml",
-    "vol",
-    "alc",
-  ].some(term => low.includes(term));
+  if (line.length < 3 || line.length > 70 || !/[a-z]{3}/i.test(low)) return true;
+  if (/\b(sulfitos?|sulfites?|sulphites?|embotellado|imported by|product of|750\s*ml|\d+[,.]?\d*\s*%\s*(?:vol|alc))\b/i.test(low)) return true;
+  return false;
+}
+
+function looksLikeDescription(line: string) {
+  const low = removeAccents(line.toLowerCase());
+  return /^(?:vino|wine|vin|tinto|blanco|rosado|red wine|white wine|reserva|gran reserva|crianza|joven|denominacion|appellation|indicacion|protegida|espana|france|italia|bodega|bodegas|winery|chateau|domaine|elaborado|producido|seleccion|cosecha|organic|ecologico|contiene)\b/i.test(low)
+    || /^(?:rioja|ribera del duero|rueda|priorat|rias baixas|cava|champagne|toro|somontano|bierzo|navarra|jerez)$/i.test(low)
+    || /\b(?:d\.?o\.?c?a?\.?|denominacion de origen|appellation d.origine|\d{4}|\d+\s*(?:ml|cl)|\d+\s*%|www\.)\b/i.test(low)
+    || /[.!?]/.test(line)
+    || line.split(/\s+/).length > 6;
 }
 
 function titleCase(value: string) {
@@ -45,14 +41,17 @@ export function parseWineText(text: string): Partial<WineFormData> {
     .map(cleanLine)
     .filter(line => line && !looksLikeNoise(line));
 
-  const vintage = searchable.match(/\b(19[5-9]\d|20[0-2]\d)\b/);
-  if (vintage) fields.vintage = vintage[1];
+  const vintage = searchable.match(/\b(19[5-9]\d|20[0-3]\d)\b/g)?.find(value => Number(value) <= new Date().getFullYear() + 1);
+  if (vintage) fields.vintage = vintage;
 
-  const alcohol = searchable.match(/(\d{1,2}[,.]?\d?)\s*%\s*(vol\.?|alc\.?|alcohol)?/i);
-  if (alcohol) fields.alcohol = `${alcohol[1].replace(",", ".")}%`;
+  const alcohol = searchable.match(/\b(\d{1,2}(?:[,.]\d)?)\s*%\s*(?:vol\.?|alc\.?)?/i);
+  if (alcohol && Number(alcohol[1].replace(',', '.')) <= 25) fields.alcohol = `${alcohol[1].replace(",", ".")}%`;
 
-  const volume = searchable.match(/(\d{2,3})\s*ml|75\s*cl/i);
-  if (volume) fields.volume = volume[0].includes("cl") ? "750ml" : `${volume[1]}ml`;
+  const volume = searchable.match(/\b(\d{2,4})\s*m\s*l\b|\b(\d{2,3})\s*c\s*l\b|\b(\d[,.]\d{1,2})\s*l\b/i);
+  if (volume) {
+    const ml = volume[1] ? Number(volume[1]) : volume[2] ? Number(volume[2]) * 10 : Math.round(Number(volume[3].replace(',', '.')) * 1000);
+    if (ml >= 187 && ml <= 3000) fields.volume = `${ml}ml`;
+  }
 
   const typePatterns: Array<[RegExp, WineType]> = [
     [/\b(tinto|rouge|rosso|red wine|vino tinto)\b/i, "tinto"],
@@ -68,7 +67,7 @@ export function parseWineText(text: string): Partial<WineFormData> {
   }
 
   const countryMap: Array<[RegExp, string]> = [
-    [/\b(rioja|ribera del duero|priorat|rias baixas|bierzo|cava|sherry|jerez|toro|somontano|rueda|yecla|jumilla|montsant|navarra|valdepenas)\b/i, "Espana"],
+    [/\b(rioja|ribera del duero|priorat|rias baixas|bierzo|cava|sherry|jerez|toro|somontano|rueda|yecla|jumilla|montsant|navarra|valdepenas)\b/i, "España"],
     [/\b(bordeaux|bourgogne|burgundy|champagne|rhone|alsace|loire|provence|languedoc)\b/i, "Francia"],
     [/\b(toscana|piemonte|veneto|sicilia|puglia|barolo|chianti|brunello|amarone|soave|gavi)\b/i, "Italia"],
     [/\b(napa valley|sonoma|california|oregon|washington state)\b/i, "Estados Unidos"],
@@ -95,7 +94,7 @@ export function parseWineText(text: string): Partial<WineFormData> {
   const found = grapes.filter(grape => new RegExp(`\\b${grape}\\b`, "i").test(searchable));
   if (found.length) fields.grapes = found.map(titleCase).join(", ");
 
-  const denomination = normalized.match(/D\.?O\.?\s*(?:Ca\.?|P\.?|C\.?)?\s*([A-Za-z\u00C0-\u024F\s]+?)(?:\n|,|\.|\d|$)/i);
+  const denomination = normalized.match(/\b(?:D\.?O\.?\s*(?:Ca\.?|P\.?|C\.?)?|Denominaci[oó]n de Origen(?: Calificada)?)\s*[:.-]?\s*([^\n,.;\d]+)/i);
   if (denomination?.[1]) {
     const value = cleanLine(denomination[1]);
     if (value.length > 2 && value.length < 60) fields.denomination = value;
@@ -103,15 +102,15 @@ export function parseWineText(text: string): Partial<WineFormData> {
 
   const regionMap: Array<[RegExp, string]> = [
     [/rioja/i, "La Rioja"],
-    [/ribera del duero/i, "Castilla y Leon"],
-    [/priorat/i, "Cataluna"],
+    [/ribera del duero/i, "Castilla y León"],
+    [/priorat/i, "Cataluña"],
     [/rias baixas/i, "Galicia"],
-    [/penedes/i, "Cataluna"],
-    [/bierzo/i, "Castilla y Leon"],
-    [/rueda/i, "Castilla y Leon"],
-    [/toro/i, "Castilla y Leon"],
+    [/penedes/i, "Cataluña"],
+    [/bierzo/i, "Castilla y León"],
+    [/rueda/i, "Castilla y León"],
+    [/toro/i, "Castilla y León"],
     [/navarra/i, "Navarra"],
-    [/somontano/i, "Aragon"],
+    [/somontano/i, "Aragón"],
   ];
   for (const [pattern, region] of regionMap) {
     if (pattern.test(searchable)) {
@@ -120,13 +119,17 @@ export function parseWineText(text: string): Partial<WineFormData> {
     }
   }
 
-  if (labelLines[0]) fields.name = labelLines[0].slice(0, 80);
-  if (labelLines.length > 1) {
-    const winery = labelLines.slice(1, 7).find(line =>
-      /\b(bodega|bodegas|winery|chateau|domaine|cantina|cellar|cellers|vina)\b/i.test(removeAccents(line)),
-    );
-    fields.winery = (winery ?? labelLines[1]).slice(0, 80);
-  }
+  // El OCR devuelve líneas en un orden visual imperfecto. Nunca inferimos la bodega
+  // de la segunda línea: suele ser la añada, el tipo o la denominación.
+  const winery = labelLines.find(line =>
+    /^(?:bodegas?|winery|ch[aâ]teau|domaine|cantina|cellers?)\s+\S+/i.test(line),
+  );
+  if (winery) fields.winery = winery.slice(0, 80);
+
+  const name = labelLines.slice(0, 8).find(line =>
+    line.length >= 3 && line.length <= 48 && !looksLikeDescription(line) && line !== winery,
+  );
+  if (name) fields.name = name.slice(0, 80);
 
   return fields;
 }
