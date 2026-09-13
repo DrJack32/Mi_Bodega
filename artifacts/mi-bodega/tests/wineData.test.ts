@@ -5,6 +5,7 @@ import {
   getWineAverageRating,
   getWineStockCount,
   getWineTastedBottleCount,
+  getWineVintageFamily,
   normalizePriceNumber,
   normalizeStorageLocations,
   normalizeWineRecords,
@@ -117,4 +118,14 @@ test("normaliza ubicaciones preparadas sin duplicados", () => {
 test("rechaza estructuras que no son una coleccion de vinos", () => {
   assert.throws(() => normalizeWineRecords({ wines: [] }), /lista valida/);
   assert.throws(() => normalizeWineRecords([null]), /entrada de vino/);
+});
+
+test("agrupa las añadas del mismo vino aunque cambien mayúsculas o acentos", () => {
+  const wines = normalizeWineRecords([
+    { id: "2024", name: "Alceño", winery: "Bodegas Alceño", vintage: "2024", photos: [], tastings: [], stock: [] },
+    { id: "2022", name: "ALCENO", winery: "Alceño S.A.", vintage: "2022", photos: [], tastings: [], stock: [] },
+    { id: "other", name: "Otro vino", winery: "Bodegas Alceño", vintage: "2023", photos: [], tastings: [], stock: [] },
+  ]);
+
+  assert.deepEqual(getWineVintageFamily(wines, wines[0]).map((wine) => wine.id), ["2024", "2022"]);
 });

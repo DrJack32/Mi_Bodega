@@ -32,6 +32,60 @@ function titleCase(value: string) {
     .join(" ");
 }
 
+type AppellationMatch = {
+  pattern: RegExp;
+  denomination: string;
+  region: string;
+  country: string;
+};
+
+const APPELLATIONS: AppellationMatch[] = [
+  { pattern: /\bjumilla\b/i, denomination: "DOP Jumilla", region: "Murcia", country: "España" },
+  { pattern: /\byecla\b/i, denomination: "DOP Yecla", region: "Murcia", country: "España" },
+  { pattern: /\bbullas\b/i, denomination: "DOP Bullas", region: "Murcia", country: "España" },
+  { pattern: /\brioja\b/i, denomination: "DOCa Rioja", region: "La Rioja", country: "España" },
+  { pattern: /\bribera del duero\b/i, denomination: "DOP Ribera del Duero", region: "Castilla y León", country: "España" },
+  { pattern: /\brias baixas\b/i, denomination: "DOP Rías Baixas", region: "Galicia", country: "España" },
+  { pattern: /\bpriorat\b/i, denomination: "DOCa Priorat", region: "Cataluña", country: "España" },
+  { pattern: /\bpenedes\b/i, denomination: "DOP Penedès", region: "Cataluña", country: "España" },
+  { pattern: /\bbierzo\b/i, denomination: "DOP Bierzo", region: "Castilla y León", country: "España" },
+  { pattern: /\brueda\b/i, denomination: "DOP Rueda", region: "Castilla y León", country: "España" },
+  { pattern: /\btoro\b/i, denomination: "DOP Toro", region: "Castilla y León", country: "España" },
+  { pattern: /\bsomontano\b/i, denomination: "DOP Somontano", region: "Aragón", country: "España" },
+  { pattern: /\bnavarra\b/i, denomination: "DOP Navarra", region: "Navarra", country: "España" },
+];
+
+function cleanWinery(value: string) {
+  return cleanLine(value)
+    .replace(/\s+S\.?\s*[AL]\.?\s*(?:U\.?)?\b.*$/i, "")
+    .replace(/\s+(?:R\.?\s*E\.?|registro)\s+[A-Z0-9-]+.*$/i, "")
+    .trim();
+}
+
+function wineryBrand(value: string) {
+  return value
+    .replace(/^(?:bodegas?|winery|ch[aâ]teau|domaine|cantina|cellers?)\s+/i, "")
+    .trim();
+}
+
+function editDistance(a: string, b: string) {
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i += 1) {
+    let diagonal = previous[0];
+    previous[0] = i;
+    for (let j = 1; j <= b.length; j += 1) {
+      const above = previous[j];
+      previous[j] = Math.min(
+        previous[j] + 1,
+        previous[j - 1] + 1,
+        diagonal + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+      diagonal = above;
+    }
+  }
+  return previous[b.length];
+}
+
 export function parseWineText(text: string): Partial<WineFormData> {
   const fields: Partial<WineFormData> = {};
   const normalized = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -94,41 +148,60 @@ export function parseWineText(text: string): Partial<WineFormData> {
   const found = grapes.filter(grape => new RegExp(`\\b${grape}\\b`, "i").test(searchable));
   if (found.length) fields.grapes = found.map(titleCase).join(", ");
 
-  const denomination = normalized.match(/\b(?:D\.?O\.?\s*(?:Ca\.?|P\.?|C\.?)?|Denominaci[oó]n de Origen(?: Calificada)?)\s*[:.-]?\s*([^\n,.;\d]+)/i);
-  if (denomination?.[1]) {
-    const value = cleanLine(denomination[1]);
-    if (value.length > 2 && value.length < 60) fields.denomination = value;
-  }
-
-  const regionMap: Array<[RegExp, string]> = [
-    [/rioja/i, "La Rioja"],
-    [/ribera del duero/i, "Castilla y León"],
-    [/priorat/i, "Cataluña"],
-    [/rias baixas/i, "Galicia"],
-    [/penedes/i, "Cataluña"],
-    [/bierzo/i, "Castilla y León"],
-    [/rueda/i, "Castilla y León"],
-    [/toro/i, "Castilla y León"],
-    [/navarra/i, "Navarra"],
-    [/somontano/i, "Aragón"],
-  ];
-  for (const [pattern, region] of regionMap) {
-    if (pattern.test(searchable)) {
-      fields.region = region;
-      break;
+  const appellation = APPELLATIONS.find(({ pattern }) => pattern.test(searchable));
+  if (appellation) {
+    fields.denomination = appellation.denomination;
+    fields.region = appellation.region;
+    fields.country = appellation.country;
+  } else {
+    // No dejamos que \s atraviese un salto de línea: un encabezado genérico de
+    // "Denominación de origen" no debe capturar como valor la línea siguiente.
+    const denomination = normalized.match(
+      /\b(?:D\.?O\.?[ \t]*(?:Ca\.?|P\.?|C\.?)?|Denominaci[oó]n de Origen(?: Calificada| Protegida)?)[ \t]*[:.-]?[ \t]+([^\n,.;\d]+)/i,
+    );
+    if (denomination?.[1]) {
+      const value = cleanLine(denomination[1]);
+      const low = removeAccents(value.toLowerCase());
+      if (
+        value.length > 2 &&
+        value.length < 60 &&
+        !/^(?:protegida|calificada|protected|appellation)$/i.test(low)
+      ) {
+        fields.denomination = value;
+      }
     }
   }
 
   // El OCR devuelve líneas en un orden visual imperfecto. Nunca inferimos la bodega
   // de la segunda línea: suele ser la añada, el tipo o la denominación.
-  const winery = labelLines.find(line =>
+  const rawWinery = labelLines.find(line =>
     /^(?:bodegas?|winery|ch[aâ]teau|domaine|cantina|cellers?)\s+\S+/i.test(line),
   );
+  const winery = rawWinery ? cleanWinery(rawWinery) : undefined;
   if (winery) fields.winery = winery.slice(0, 80);
 
-  const name = labelLines.slice(0, 8).find(line =>
-    line.length >= 3 && line.length <= 48 && !looksLikeDescription(line) && line !== winery,
+  let name = labelLines.slice(0, 12).find(line =>
+    line.length >= 3 &&
+    line.length <= 48 &&
+    !looksLikeDescription(line) &&
+    line !== rawWinery &&
+    !/^(?:cepas viejas|old vines|desde\s+\d{4})$/i.test(removeAccents(line)),
   );
+
+  // Si el OCR confunde una sola letra del nombre pero la contraetiqueta contiene
+  // la bodega correctamente (Alceñe / Bodegas Alceño), usamos la grafía fiable.
+  if (name && winery) {
+    const brand = wineryBrand(winery);
+    const comparableName = removeAccents(name.toLowerCase()).replace(/[^a-z0-9]/g, "");
+    const comparableBrand = removeAccents(brand.toLowerCase()).replace(/[^a-z0-9]/g, "");
+    if (
+      comparableBrand.length >= 4 &&
+      comparableName.length >= 4 &&
+      editDistance(comparableName, comparableBrand) <= 1
+    ) {
+      name = brand;
+    }
+  }
   if (name) fields.name = name.slice(0, 80);
 
   return fields;

@@ -24,6 +24,13 @@ import {
   pruneOrphanPhotos,
 } from "@/lib/photoStorage";
 import {
+  DEFAULT_BACKUP_REMINDER,
+  isBackupReminderDue,
+  normalizeBackupReminder,
+  type BackupReminder,
+  type BackupReminderInterval,
+} from "@/lib/backupReminder";
+import {
   createStock,
   createTasting,
   normalizeStorageLocations,
@@ -56,12 +63,15 @@ export type {
 const STORAGE_KEY = "@mi_bodega_wines_v1";
 const LOCATIONS_KEY = "@mi_bodega_storage_locations_v1";
 const RECOVERY_KEY = "@mi_bodega_wines_recovery_v1";
+const BACKUP_REMINDER_KEY = "@mi_bodega_backup_reminder_v1";
 
 interface WineContextValue {
   wines: Wine[];
   storageLocations: string[];
   isLoading: boolean;
   storageWarning: string | null;
+  backupReminder: BackupReminder;
+  backupReminderDue: boolean;
   addWine: (data: WineFormData, entry?: InitialWineEntry) => Promise<Wine>;
   updateWine: (id: string, data: Partial<WineFormData>) => Promise<void>;
   deleteWine: (id: string) => Promise<void>;
@@ -75,6 +85,8 @@ interface WineContextValue {
   addStock: (wineId: string, data: StockFormData) => Promise<void>;
   addStorageLocation: (location: string) => Promise<void>;
   removeStorageLocation: (location: string) => Promise<void>;
+  setBackupReminderInterval: (interval: BackupReminderInterval) => Promise<void>;
+  snoozeBackupReminder: () => Promise<void>;
   createBackup: () => ReturnType<typeof createBackupArchive>;
   inspectBackup: (uri: string, name: string) => Promise<BackupPreview>;
   restoreBackup: (
@@ -106,6 +118,10 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
   const [storageLocations, setStorageLocations] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
+  const [backupReminder, setBackupReminder] = useState<BackupReminder>(
+    DEFAULT_BACKUP_REMINDER,
+  );
+  const backupReminderRef = useRef<BackupReminder>(DEFAULT_BACKUP_REMINDER);
   const stateRef = useRef<AppState>({ wines: [], storageLocations: [] });
   const mutationQueue = useRef<Promise<void>>(Promise.resolve());
   const mountedRef = useRef(true);
@@ -153,9 +169,21 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
         const values = await AsyncStorage.multiGet([
           STORAGE_KEY,
           LOCATIONS_KEY,
+          BACKUP_REMINDER_KEY,
         ]);
         const raw = values[0][1];
         const rawLocations = values[1][1];
+        const rawReminder = values[2][1];
+        try {
+          const reminder = normalizeBackupReminder(
+            rawReminder ? JSON.parse(rawReminder) : null,
+          );
+          backupReminderRef.current = reminder;
+          if (!cancelled) setBackupReminder(reminder);
+        } catch {
+          backupReminderRef.current = DEFAULT_BACKUP_REMINDER;
+          if (!cancelled) setBackupReminder(DEFAULT_BACKUP_REMINDER);
+        }
         let locations: string[] = [];
         try {
           locations = normalizeStorageLocations(
@@ -261,10 +289,43 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
 
   const createBackup = useCallback(async () => {
     await mutationQueue.current;
-    return createBackupArchive(
+    const result = await createBackupArchive(
       stateRef.current.wines,
       stateRef.current.storageLocations,
     );
+    const reminder = {
+      ...backupReminderRef.current,
+      lastBackupAt: new Date().toISOString(),
+      lastReminderAt: null,
+    };
+    backupReminderRef.current = reminder;
+    setBackupReminder(reminder);
+    void AsyncStorage.setItem(BACKUP_REMINDER_KEY, JSON.stringify(reminder)).catch(() => {});
+    return result;
+  }, []);
+
+  const setBackupReminderInterval = useCallback(
+    async (intervalDays: BackupReminderInterval) => {
+      const reminder: BackupReminder = {
+        ...backupReminderRef.current,
+        intervalDays,
+        lastReminderAt: null,
+      };
+      await AsyncStorage.setItem(BACKUP_REMINDER_KEY, JSON.stringify(reminder));
+      backupReminderRef.current = reminder;
+      setBackupReminder(reminder);
+    },
+    [],
+  );
+
+  const snoozeBackupReminder = useCallback(async () => {
+    const reminder: BackupReminder = {
+      ...backupReminderRef.current,
+      lastReminderAt: new Date().toISOString(),
+    };
+    await AsyncStorage.setItem(BACKUP_REMINDER_KEY, JSON.stringify(reminder));
+    backupReminderRef.current = reminder;
+    setBackupReminder(reminder);
   }, []);
 
   const inspectBackup = useCallback(async (uri: string, name: string) => {
@@ -512,6 +573,8 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
         storageLocations,
         isLoading,
         storageWarning,
+        backupReminder,
+        backupReminderDue: isBackupReminderDue(backupReminder, wines.length > 0),
         addWine,
         updateWine,
         deleteWine,
@@ -521,6 +584,8 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
         addStock,
         addStorageLocation,
         removeStorageLocation,
+        setBackupReminderInterval,
+        snoozeBackupReminder,
         createBackup,
         inspectBackup,
         restoreBackup,

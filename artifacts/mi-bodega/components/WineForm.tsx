@@ -20,7 +20,7 @@ import {
   WineFormData,
   WineType,
 } from "@/contexts/WineContext";
-import { callOCR } from "@/lib/ocr";
+import { callOCR, callOCRForPhotos } from "@/lib/ocr";
 
 const WINE_TYPES: { value: WineType; label: string; color: string }[] = [
   { value: "tinto", label: "Tinto", color: "#7B2D3E" },
@@ -216,6 +216,46 @@ export function WineForm({
     );
   };
 
+  const makeCover = (index: number) => {
+    if (index <= 0 || index >= form.photos.length) return;
+    set("photos", [
+      form.photos[index],
+      ...form.photos.filter((_, photoIndex) => photoIndex !== index),
+    ]);
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const runOCRForAllPhotos = async () => {
+    if (Platform.OS !== "android" || form.photos.length === 0) return;
+    setIsOcrLoading(true);
+    setOcrPhotoIndex(null);
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    try {
+      const fields = await callOCRForPhotos(form.photos);
+      const hasData = Object.keys(fields).length > 0;
+      setForm((prev) => ({
+        ...prev,
+        ...fields,
+        photos: prev.photos,
+        ocrUsed: prev.ocrUsed || hasData,
+      }));
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Alert.alert(
+        hasData ? "Etiquetas combinadas" : "Poco texto detectado",
+        hasData
+          ? "He cruzado el texto de todas las fotos. Revisa los campos antes de guardar."
+          : "No se pudo extraer información de las fotografías.",
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "No se pudieron analizar las fotografías.";
+      Alert.alert("Error al extraer información", message);
+    } finally {
+      setIsOcrLoading(false);
+      setOcrPhotoIndex(null);
+    }
+  };
+
   const handleSave = async () => {
     if (!form.name.trim() && !form.winery.trim()) {
       Alert.alert(
@@ -395,6 +435,29 @@ export function WineForm({
         {/* Photos list with OCR buttons */}
         {form.photos.length > 0 && (
           <View style={styles.photosGrid}>
+            {Platform.OS === "android" && form.photos.length > 1 && (
+              <Pressable
+                onPress={runOCRForAllPhotos}
+                disabled={isOcrLoading}
+                style={[
+                  styles.analyzeAllButton,
+                  {
+                    borderColor: colors.primary,
+                    borderRadius: colors.radius / 1.5,
+                    opacity: isOcrLoading ? 0.55 : 1,
+                  },
+                ]}
+              >
+                {isOcrLoading && ocrPhotoIndex === null ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons name="sparkles-outline" size={18} color={colors.primary} />
+                )}
+                <Text style={[styles.analyzeAllText, { color: colors.primary }]}>
+                  Analizar juntas todas las fotos
+                </Text>
+              </Pressable>
+            )}
             {form.photos.map((uri, i) => {
               const canRunOcr = Platform.OS === "android";
               const isThisLoading = isOcrLoading && ocrPhotoIndex === i;
@@ -415,6 +478,22 @@ export function WineForm({
                     style={styles.photoImage}
                     contentFit="cover"
                   />
+
+                  <View
+                    style={[
+                      styles.coverBadge,
+                      { backgroundColor: i === 0 ? colors.primary : "rgba(0,0,0,0.58)" },
+                    ]}
+                  >
+                    <Ionicons
+                      name={i === 0 ? "star" : "image-outline"}
+                      size={13}
+                      color="#FFF"
+                    />
+                    <Text style={styles.coverBadgeText}>
+                      {i === 0 ? "Portada" : `Foto ${i + 1}`}
+                    </Text>
+                  </View>
 
                   <View style={styles.photoCardActions}>
                     {/* OCR extraction button — main CTA */}
@@ -447,6 +526,19 @@ export function WineForm({
                             ? "Analizando…"
                             : "Extraer información"}
                         </Text>
+                      </Pressable>
+                    )}
+
+                    {i > 0 && (
+                      <Pressable
+                        onPress={() => makeCover(i)}
+                        style={[
+                          styles.makeCoverBtn,
+                          { borderColor: colors.primary },
+                        ]}
+                      >
+                        <Ionicons name="star-outline" size={14} color={colors.primary} />
+                        <Text style={[styles.makeCoverText, { color: colors.primary }]}>Portada</Text>
                       </Pressable>
                     )}
 
@@ -1058,8 +1150,30 @@ const styles = StyleSheet.create({
   },
   addPhotoLabel: { flex: 1, fontSize: 15, fontFamily: "Inter_500Medium" },
   photosGrid: { gap: 12 },
-  photoCard: { overflow: "hidden", borderWidth: 1 },
+  analyzeAllButton: {
+    minHeight: 46,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingHorizontal: 14,
+  },
+  analyzeAllText: { fontSize: 14, fontFamily: "Inter_700Bold" },
+  photoCard: { overflow: "hidden", borderWidth: 1, position: "relative" },
   photoImage: { width: "100%", height: 200 },
+  coverBadge: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 14,
+  },
+  coverBadgeText: { color: "#FFF", fontSize: 11, fontFamily: "Inter_700Bold" },
   photoCardActions: {
     padding: 10,
     flexDirection: "row",
@@ -1076,6 +1190,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   extractBtnText: { color: "#FFF", fontSize: 14, fontFamily: "Inter_700Bold" },
+  makeCoverBtn: {
+    height: 36,
+    borderWidth: 1,
+    borderRadius: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    paddingHorizontal: 9,
+  },
+  makeCoverText: { fontSize: 12, fontFamily: "Inter_700Bold" },
   removeBtn: {
     width: 36,
     height: 36,

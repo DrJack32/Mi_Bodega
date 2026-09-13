@@ -228,6 +228,36 @@ export function getWineAverageRating(wine: Pick<Wine, "tastings">) {
   return rated.reduce((sum, tasting) => sum + tasting.rating, 0) / rated.length;
 }
 
+function normalizeWineIdentity(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(?:bodegas?|s a|s l)\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function areSameWineFamily(a: Pick<Wine, "name" | "winery">, b: Pick<Wine, "name" | "winery">) {
+  const aName = normalizeWineIdentity(a.name);
+  const bName = normalizeWineIdentity(b.name);
+  if (!aName || aName !== bName) return false;
+
+  const aWinery = normalizeWineIdentity(a.winery);
+  const bWinery = normalizeWineIdentity(b.winery);
+  return !aWinery || !bWinery || aWinery === bWinery;
+}
+
+export function getWineVintageFamily(wines: Wine[], target: Wine) {
+  return wines
+    .filter((wine) => areSameWineFamily(wine, target))
+    .sort((a, b) => {
+      const vintageDifference = Number(b.vintage || 0) - Number(a.vintage || 0);
+      return vintageDifference || b.createdAt.localeCompare(a.createdAt);
+    });
+}
+
 export function syncWineSummary(wine: Wine): Wine {
   const latest = getLatestTasting(wine);
   return {

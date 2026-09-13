@@ -21,6 +21,7 @@ import {
   useWines,
 } from "@/contexts/WineContext";
 import { useColors } from "@/hooks/useColors";
+import type { BackupReminderInterval } from "@/lib/backupReminder";
 
 function formatBackupDate(value: string | null) {
   if (!value) return "Fecha no disponible";
@@ -37,8 +38,11 @@ export default function DatosScreen() {
     wines,
     storageLocations,
     storageWarning,
+    backupReminder,
+    backupReminderDue,
     addStorageLocation,
     removeStorageLocation,
+    setBackupReminderInterval,
     createBackup,
     inspectBackup,
     restoreBackup,
@@ -339,6 +343,47 @@ export default function DatosScreen() {
             Crea un archivo ZIP local con todos los vinos y sus fotografias. La
             copia no se sube a ningun servidor.
           </Text>
+          <View style={[styles.reminderBox, { backgroundColor: colors.background, borderColor: colors.border }]}>
+            <View style={styles.reminderHeader}>
+              <Ionicons
+                name={backupReminderDue ? "notifications" : "notifications-outline"}
+                size={18}
+                color={backupReminderDue ? colors.destructive : colors.primary}
+              />
+              <View style={styles.reminderHeaderText}>
+                <Text style={[styles.reminderTitle, { color: colors.foreground }]}>Recordatorio de copia</Text>
+                <Text style={[styles.reminderStatus, { color: colors.mutedForeground }]}>
+                  {backupReminder.lastBackupAt
+                    ? `Última copia: ${formatBackupDate(backupReminder.lastBackupAt)}`
+                    : "Todavía no consta ninguna copia completa"}
+                </Text>
+              </View>
+            </View>
+            <Text style={[styles.reminderHelp, { color: colors.mutedForeground }]}>La app te avisará al abrirla. Si lo pospones, volverá a recordártelo en 3 días.</Text>
+            <View style={styles.intervalRow}>
+              {([
+                [7, "7 días"],
+                [14, "14 días"],
+                [30, "30 días"],
+                [60, "60 días"],
+                [0, "No avisar"],
+              ] as Array<[BackupReminderInterval, string]>).map(([days, label]) => (
+                <Pressable
+                  key={days}
+                  onPress={() => void setBackupReminderInterval(days)}
+                  style={[
+                    styles.intervalChip,
+                    {
+                      backgroundColor: backupReminder.intervalDays === days ? colors.primary : colors.secondary,
+                      borderColor: backupReminder.intervalDays === days ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  <Text style={[styles.intervalText, { color: backupReminder.intervalDays === days ? "#FFF" : colors.foreground }]}>{label}</Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
           <Pressable
             onPress={exportData}
             disabled={isBusy}
@@ -557,6 +602,15 @@ const styles = StyleSheet.create({
   panelHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   panelTitle: { flex: 1, fontSize: 17, fontFamily: "Inter_600SemiBold" },
   description: { fontSize: 13, lineHeight: 19, fontFamily: "Inter_400Regular" },
+  reminderBox: { borderWidth: 1, borderRadius: 10, padding: 12, gap: 9 },
+  reminderHeader: { flexDirection: "row", alignItems: "center", gap: 9 },
+  reminderHeaderText: { flex: 1 },
+  reminderTitle: { fontSize: 14, fontFamily: "Inter_700Bold" },
+  reminderStatus: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
+  reminderHelp: { fontSize: 11, lineHeight: 16, fontFamily: "Inter_400Regular" },
+  intervalRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  intervalChip: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 10, paddingVertical: 7 },
+  intervalText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
   primaryButton: {
     minHeight: 46,
     flexDirection: "row",

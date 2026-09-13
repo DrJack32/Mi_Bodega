@@ -15,12 +15,14 @@ import {
   useWindowDimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { PhotoViewer } from "@/components/PhotoViewer";
 import { useColors } from "@/hooks/useColors";
 import { useWines } from "@/contexts/WineContext";
 import {
   getWineAverageRating,
   getWineStockCount,
   getWineTastedBottleCount,
+  getWineVintageFamily,
 } from "@/lib/wineData";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -76,9 +78,10 @@ export default function WineDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width: photoWidth } = useWindowDimensions();
-  const { getWine, toggleFavorite, deleteWine } = useWines();
+  const { wines, getWine, toggleFavorite, deleteWine } = useWines();
   const wine = getWine(id ?? "");
   const [photoIndex, setPhotoIndex] = useState(0);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const photoScroll = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -111,6 +114,7 @@ export default function WineDetailScreen() {
   const stockCount = getWineStockCount(wine);
   const tastedCount = getWineTastedBottleCount(wine);
   const averageRating = getWineAverageRating(wine);
+  const vintageFamily = getWineVintageFamily(wines, wine);
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
@@ -174,12 +178,22 @@ export default function WineDetailScreen() {
                 accessibilityLabel="Fotografías del vino. Desliza para ver las demás"
               >
                 {wine.photos.map((uri, index) => (
-                  <Image
+                  <Pressable
                     key={`${index}-${uri}`}
-                    source={{ uri }}
                     style={[styles.heroPhoto, { width: photoWidth }]}
-                    contentFit="cover"
-                  />
+                    onPress={() => {
+                      setPhotoIndex(index);
+                      setViewerOpen(true);
+                    }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Ampliar fotografía ${index + 1}`}
+                  >
+                    <Image
+                      source={{ uri }}
+                      style={StyleSheet.absoluteFill}
+                      contentFit="cover"
+                    />
+                  </Pressable>
                 ))}
               </ScrollView>
               <LinearGradient
@@ -219,6 +233,10 @@ export default function WineDetailScreen() {
                   </Pressable>
                 </View>
               )}
+              <View style={styles.expandHint} pointerEvents="none">
+                <Ionicons name="expand-outline" size={15} color="#FFF" />
+                <Text style={styles.expandHintText}>Toca para ampliar</Text>
+              </View>
             </>
           ) : (
             <View
@@ -471,6 +489,19 @@ export default function WineDetailScreen() {
               Añadir otra añada de este vino
             </Text>
           </Pressable>
+          {vintageFamily.length > 1 && (
+            <Pressable
+              onPress={() =>
+                router.push({ pathname: "/compare-vintages", params: { id: wine.id } })
+              }
+              style={styles.vintageAction}
+            >
+              <Ionicons name="git-compare-outline" size={17} color={colors.primary} />
+              <Text style={[styles.vintageActionText, { color: colors.primary }]}>
+                Comparar las {vintageFamily.length} añadas
+              </Text>
+            </Pressable>
+          )}
         </View>
 
         <View style={[styles.contentPad, { paddingBottom: bottomPad + 24 }]}>
@@ -698,6 +729,13 @@ export default function WineDetailScreen() {
           )}
         </View>
       </ScrollView>
+      <PhotoViewer
+        visible={viewerOpen}
+        photos={wine.photos}
+        index={photoIndex}
+        onIndexChange={setPhotoIndex}
+        onClose={() => setViewerOpen(false)}
+      />
     </View>
   );
 }
@@ -748,6 +786,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Inter_600SemiBold",
   },
+  expandHint: {
+    position: "absolute",
+    right: 14,
+    bottom: 17,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 15,
+  },
+  expandHintText: { color: "#FFF", fontSize: 11, fontFamily: "Inter_600SemiBold" },
   heroOverlay: {
     position: "absolute",
     top: 0,

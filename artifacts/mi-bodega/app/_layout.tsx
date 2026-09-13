@@ -46,6 +46,7 @@ function RootLayoutNav() {
         name="add-stock"
         options={{ headerShown: false, presentation: "modal" }}
       />
+      <Stack.Screen name="compare-vintages" options={{ headerShown: false }} />
       <Stack.Screen name="wine/[id]" options={{ headerShown: false }} />
     </Stack>
   );
