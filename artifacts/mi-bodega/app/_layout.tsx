@@ -39,9 +39,14 @@ function RootLayoutNav() {
         }}
       />
       <Stack.Screen
-        name="wine/[id]"
-        options={{ headerShown: false }}
+        name="add-tasting"
+        options={{ headerShown: false, presentation: "modal" }}
       />
+      <Stack.Screen
+        name="add-stock"
+        options={{ headerShown: false, presentation: "modal" }}
+      />
+      <Stack.Screen name="wine/[id]" options={{ headerShown: false }} />
     </Stack>
   );
 }

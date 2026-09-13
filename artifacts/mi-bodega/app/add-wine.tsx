@@ -1,15 +1,24 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { WineForm } from '@/components/WineForm';
-import { WineFormData, useWines } from '@/contexts/WineContext';
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useEffect, useState } from "react";
+import { Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { WineForm } from "@/components/WineForm";
+import {
+  InitialWineEntry,
+  WineFormData,
+  useWines,
+} from "@/contexts/WineContext";
 
 export default function AddWineScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { addWine, updateWine, getWine } = useWines();
-  const params = useLocalSearchParams<{ ocrData?: string; photoUri?: string; editId?: string }>();
+  const { addWine, updateWine, getWine, storageLocations } = useWines();
+  const params = useLocalSearchParams<{
+    ocrData?: string;
+    photoUri?: string;
+    editId?: string;
+    cloneId?: string;
+  }>();
 
   const [initialValues, setInitialValues] = useState<Partial<WineFormData>>({});
 
@@ -17,8 +26,36 @@ export default function AddWineScreen() {
     if (params.editId) {
       const wine = getWine(params.editId);
       if (wine) {
-        const { id, createdAt, ...rest } = wine;
+        const { id, createdAt, tastings, stock, ...rest } = wine;
         setInitialValues(rest);
+      }
+      return;
+    }
+
+    if (params.cloneId) {
+      const source = getWine(params.cloneId);
+      if (source) {
+        setInitialValues({
+          photos: [],
+          name: source.name,
+          winery: source.winery,
+          vintage: "",
+          type: source.type,
+          country: source.country,
+          region: source.region,
+          denomination: source.denomination,
+          grapes: source.grapes,
+          alcohol: source.alcohol,
+          volume: source.volume,
+          date: "",
+          location: "",
+          price: "",
+          rating: 0,
+          wouldRepeat: null,
+          notes: "",
+          isFavorite: false,
+          ocrUsed: false,
+        });
       }
       return;
     }
@@ -37,23 +74,24 @@ export default function AddWineScreen() {
     }
 
     setInitialValues(values);
-  }, [params.editId, params.ocrData, params.photoUri]);
+  }, [getWine, params.cloneId, params.editId, params.ocrData, params.photoUri]);
 
-  const handleSave = async (data: WineFormData) => {
+  const handleSave = async (data: WineFormData, entry?: InitialWineEntry) => {
     if (params.editId) {
       await updateWine(params.editId, data);
     } else {
-      await addWine(data);
+      await addWine(data, entry);
     }
     router.back();
   };
 
-  const topPad = Platform.OS === 'web' ? 67 : insets.top;
+  const topPad = Platform.OS === "web" ? 67 : insets.top;
 
   return (
     <WineForm
       initialValues={initialValues}
       isEditing={Boolean(params.editId)}
+      storageLocations={storageLocations}
       onSave={handleSave}
       onCancel={() => router.back()}
     />

@@ -8,6 +8,28 @@ export type WineType =
   | "orange"
   | "otro";
 
+export interface WineTasting {
+  id: string;
+  date: string;
+  location: string;
+  price: string;
+  rating: number;
+  wouldRepeat: boolean | null;
+  notes: string;
+  quantity: number;
+  fromStock: boolean;
+  createdAt: string;
+}
+
+export interface WineStock {
+  id: string;
+  location: string;
+  quantity: number;
+  purchasedQuantity: number;
+  price: string;
+  addedAt: string;
+}
+
 export interface Wine {
   id: string;
   photos: string[];
@@ -21,18 +43,34 @@ export interface Wine {
   grapes: string;
   alcohol: string;
   volume: string;
+  /** Resumen de la cata más reciente. Se conserva para copias antiguas. */
   date: string;
   location: string;
   price: string;
   rating: number;
   wouldRepeat: boolean | null;
   notes: string;
+  tastings: WineTasting[];
+  stock: WineStock[];
   isFavorite: boolean;
   createdAt: string;
   ocrUsed: boolean;
 }
 
-export type WineFormData = Omit<Wine, "id" | "createdAt">;
+export type WineFormData = Omit<
+  Wine,
+  "id" | "createdAt" | "tastings" | "stock"
+>;
+
+export type TastingFormData = Omit<WineTasting, "id" | "createdAt">;
+export type StockFormData = Omit<
+  WineStock,
+  "id" | "addedAt" | "purchasedQuantity"
+>;
+
+export type InitialWineEntry =
+  | { kind: "tasted" }
+  | { kind: "cellar"; location: string; quantity: number; price: string };
 
 const WINE_TYPES = new Set<WineType>([
   "tinto",
@@ -55,10 +93,6 @@ const STRING_FIELDS = [
   "grapes",
   "alcohol",
   "volume",
-  "date",
-  "location",
-  "price",
-  "notes",
 ] as const;
 
 function createId() {
@@ -71,6 +105,34 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function asString(value: unknown) {
   return typeof value === "string" ? value : "";
+}
+
+function asDate(value: unknown) {
+  const candidate = asString(value);
+  return Number.isNaN(Date.parse(candidate))
+    ? new Date().toISOString()
+    : candidate;
+}
+
+function asQuantity(value: unknown, fallback = 1) {
+  const quantity = Number(value);
+  if (!Number.isFinite(quantity)) return fallback;
+  return Math.max(0, Math.min(100_000, Math.floor(quantity)));
+}
+
+function asRating(value: unknown) {
+  const rating = Number(value);
+  return Number.isFinite(rating)
+    ? Math.max(0, Math.min(10, Math.round(rating)))
+    : 0;
+}
+
+function uniqueId(value: unknown, usedIds: Set<string>) {
+  const rawId = asString(value).trim();
+  let id = rawId || createId();
+  while (usedIds.has(id)) id = createId();
+  usedIds.add(id);
+  return id;
 }
 
 export function normalizePriceNumber(value: unknown): number {
@@ -86,6 +148,99 @@ export function normalizePriceNumber(value: unknown): number {
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
 }
 
+export function createTasting(
+  data: Omit<TastingFormData, "fromStock"> & { fromStock?: boolean },
+): WineTasting {
+  return {
+    ...data,
+    quantity: asQuantity(data.quantity, 1) || 1,
+    rating: asRating(data.rating),
+    fromStock: data.fromStock === true,
+    id: createId(),
+    createdAt: new Date().toISOString(),
+  };
+}
+
+export function createStock(data: StockFormData): WineStock {
+  const quantity = asQuantity(data.quantity, 1) || 1;
+  return {
+    ...data,
+    location: data.location.trim(),
+    quantity,
+    purchasedQuantity: quantity,
+    id: createId(),
+    addedAt: new Date().toISOString(),
+  };
+}
+
+function normalizeTasting(value: unknown, usedIds: Set<string>): WineTasting {
+  if (!isRecord(value)) {
+    throw new Error("La copia contiene una cata no valida.");
+  }
+  return {
+    id: uniqueId(value.id, usedIds),
+    date: asString(value.date),
+    location: asString(value.location),
+    price: asString(value.price),
+    rating: asRating(value.rating),
+    wouldRepeat:
+      typeof value.wouldRepeat === "boolean" ? value.wouldRepeat : null,
+    notes: asString(value.notes),
+    quantity: asQuantity(value.quantity, 1) || 1,
+    fromStock: value.fromStock === true,
+    createdAt: asDate(value.createdAt),
+  };
+}
+
+function normalizeStock(value: unknown, usedIds: Set<string>): WineStock {
+  if (!isRecord(value)) {
+    throw new Error("La copia contiene una entrada de bodega no valida.");
+  }
+  const quantity = asQuantity(value.quantity, 0);
+  return {
+    id: uniqueId(value.id, usedIds),
+    location: asString(value.location).trim(),
+    quantity,
+    purchasedQuantity: Math.max(
+      quantity,
+      asQuantity(value.purchasedQuantity, quantity),
+    ),
+    price: asString(value.price),
+    addedAt: asDate(value.addedAt),
+  };
+}
+
+export function getLatestTasting(wine: Pick<Wine, "tastings">) {
+  return wine.tastings[0];
+}
+
+export function getWineStockCount(wine: Pick<Wine, "stock">) {
+  return wine.stock.reduce((sum, entry) => sum + entry.quantity, 0);
+}
+
+export function getWineTastedBottleCount(wine: Pick<Wine, "tastings">) {
+  return wine.tastings.reduce((sum, tasting) => sum + tasting.quantity, 0);
+}
+
+export function getWineAverageRating(wine: Pick<Wine, "tastings">) {
+  const rated = wine.tastings.filter((tasting) => tasting.rating > 0);
+  if (rated.length === 0) return 0;
+  return rated.reduce((sum, tasting) => sum + tasting.rating, 0) / rated.length;
+}
+
+export function syncWineSummary(wine: Wine): Wine {
+  const latest = getLatestTasting(wine);
+  return {
+    ...wine,
+    date: latest?.date ?? "",
+    location: latest?.location ?? "",
+    price: latest?.price ?? "",
+    rating: latest?.rating ?? 0,
+    wouldRepeat: latest?.wouldRepeat ?? null,
+    notes: latest?.notes ?? "",
+  };
+}
+
 export function normalizeWineRecord(
   value: unknown,
   usedIds: Set<string> = new Set(),
@@ -94,22 +249,36 @@ export function normalizeWineRecord(
     throw new Error("La copia contiene una entrada de vino no valida.");
   }
 
-  const rawId = asString(value.id).trim();
-  let id = rawId || createId();
-  while (usedIds.has(id)) id = createId();
-  usedIds.add(id);
-
-  const createdAtCandidate = asString(value.createdAt);
-  const createdAt = Number.isNaN(Date.parse(createdAtCandidate))
-    ? new Date().toISOString()
-    : createdAtCandidate;
-  const rawRating = Number(value.rating);
-  const rating = Number.isFinite(rawRating)
-    ? Math.max(0, Math.min(10, Math.round(rawRating)))
-    : 0;
+  const id = uniqueId(value.id, usedIds);
   const type = WINE_TYPES.has(value.type as WineType)
     ? (value.type as WineType)
     : "otro";
+  const tastingIds = new Set<string>();
+  const stockIds = new Set<string>();
+  const rawTastings = value.tastings;
+  const rawStock = value.stock;
+  const hasTastingHistory = Array.isArray(rawTastings);
+  const tastings = hasTastingHistory
+    ? rawTastings.map((item) => normalizeTasting(item, tastingIds))
+    : [
+        normalizeTasting(
+          {
+            date: value.date,
+            location: value.location,
+            price: value.price,
+            rating: value.rating,
+            wouldRepeat: value.wouldRepeat,
+            notes: value.notes,
+            quantity: 1,
+            fromStock: false,
+            createdAt: value.createdAt,
+          },
+          tastingIds,
+        ),
+      ];
+  const stock = Array.isArray(rawStock)
+    ? rawStock.map((item) => normalizeStock(item, stockIds))
+    : [];
 
   const wine = {
     id,
@@ -120,11 +289,16 @@ export function normalizeWineRecord(
         )
       : [],
     type,
-    rating,
-    wouldRepeat:
-      typeof value.wouldRepeat === "boolean" ? value.wouldRepeat : null,
+    tastings,
+    stock,
+    date: "",
+    location: "",
+    price: "",
+    rating: 0,
+    wouldRepeat: null,
+    notes: "",
     isFavorite: value.isFavorite === true,
-    createdAt,
+    createdAt: asDate(value.createdAt),
     ocrUsed: value.ocrUsed === true,
   } as Wine;
 
@@ -132,7 +306,7 @@ export function normalizeWineRecord(
     wine[field] = asString(value[field]);
   }
 
-  return wine;
+  return syncWineSummary(wine);
 }
 
 export function normalizeWineRecords(value: unknown): Wine[] {
@@ -147,4 +321,20 @@ export function normalizeWineRecords(value: unknown): Wine[] {
 
   const usedIds = new Set<string>();
   return value.map((item) => normalizeWineRecord(item, usedIds));
+}
+
+export function normalizeStorageLocations(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const locations: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const location = item.trim();
+    const key = location.toLocaleLowerCase("es");
+    if (!location || seen.has(key)) continue;
+    seen.add(key);
+    locations.push(location);
+    if (locations.length >= 100) break;
+  }
+  return locations;
 }

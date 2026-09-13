@@ -10,6 +10,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -32,12 +33,21 @@ function formatBackupDate(value: string | null) {
 export default function DatosScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { wines, storageWarning, createBackup, inspectBackup, restoreBackup } =
-    useWines();
+  const {
+    wines,
+    storageLocations,
+    storageWarning,
+    addStorageLocation,
+    removeStorageLocation,
+    createBackup,
+    inspectBackup,
+    restoreBackup,
+  } = useWines();
   const [preview, setPreview] = useState<BackupPreview | null>(null);
   const [busyAction, setBusyAction] = useState<
     "export" | "inspect" | "restore" | null
   >(null);
+  const [newLocation, setNewLocation] = useState("");
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
@@ -67,7 +77,7 @@ export default function DatosScreen() {
       });
       Alert.alert(
         "Copia preparada",
-        `${result.wineCount} ${result.wineCount === 1 ? "vino" : "vinos"} y ${result.photoCount} ${result.photoCount === 1 ? "foto" : "fotos"} incluidos. Guarda el ZIP en una ubicacion segura.`,
+        `${result.wineCount} ${result.wineCount === 1 ? "vino" : "vinos"}, ${result.photoCount} ${result.photoCount === 1 ? "foto" : "fotos"} y ${result.locationCount} ubicaciones incluidos. Guarda el ZIP en una ubicacion segura.`,
       );
     } catch (error) {
       const message =
@@ -210,6 +220,116 @@ export default function DatosScreen() {
           ]}
         >
           <View style={styles.panelHeader}>
+            <Ionicons
+              name="location-outline"
+              size={22}
+              color={colors.primary}
+            />
+            <Text style={[styles.panelTitle, { color: colors.foreground }]}>
+              Ubicaciones de mi bodega
+            </Text>
+          </View>
+          <Text style={[styles.description, { color: colors.mutedForeground }]}>
+            Prepara tus ubicaciones habituales para elegirlas con un toque al
+            guardar botellas.
+          </Text>
+          <View style={styles.locationInputRow}>
+            <TextInput
+              value={newLocation}
+              onChangeText={setNewLocation}
+              placeholder="Ej: Botellero principal"
+              placeholderTextColor={colors.mutedForeground}
+              style={[
+                styles.locationInput,
+                {
+                  color: colors.foreground,
+                  backgroundColor: colors.background,
+                  borderColor: colors.border,
+                  borderRadius: colors.radius / 1.5,
+                },
+              ]}
+              returnKeyType="done"
+              onSubmitEditing={async () => {
+                if (!newLocation.trim()) return;
+                await addStorageLocation(newLocation);
+                setNewLocation("");
+              }}
+            />
+            <Pressable
+              onPress={async () => {
+                if (!newLocation.trim()) return;
+                await addStorageLocation(newLocation);
+                setNewLocation("");
+              }}
+              style={[
+                styles.addLocationButton,
+                { backgroundColor: colors.primary },
+              ]}
+            >
+              <Ionicons name="add" size={22} color="#FFF" />
+            </Pressable>
+          </View>
+          {storageLocations.length > 0 ? (
+            <View style={styles.locationList}>
+              {storageLocations.map((location) => (
+                <View
+                  key={location}
+                  style={[
+                    styles.locationChip,
+                    { backgroundColor: colors.secondary },
+                  ]}
+                >
+                  <Text
+                    style={[styles.locationText, { color: colors.foreground }]}
+                  >
+                    {location}
+                  </Text>
+                  <Pressable
+                    onPress={() =>
+                      Alert.alert(
+                        "Quitar ubicación preparada",
+                        `¿Quieres quitar "${location}" de las sugerencias? Las botellas guardadas allí no se modificarán.`,
+                        [
+                          { text: "Cancelar", style: "cancel" },
+                          {
+                            text: "Quitar",
+                            style: "destructive",
+                            onPress: () => removeStorageLocation(location),
+                          },
+                        ],
+                      )
+                    }
+                    hitSlop={8}
+                  >
+                    <Ionicons
+                      name="close-circle"
+                      size={18}
+                      color={colors.mutedForeground}
+                    />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : (
+            <Text
+              style={[styles.emptyLocations, { color: colors.mutedForeground }]}
+            >
+              Todavía no has preparado ninguna ubicación.
+            </Text>
+          )}
+        </View>
+
+        <View
+          style={[
+            styles.panel,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+              borderRadius: colors.radius,
+            },
+          ]}
+        >
+          <View style={styles.panelHeader}>
             <Ionicons name="archive-outline" size={22} color={colors.primary} />
             <Text style={[styles.panelTitle, { color: colors.foreground }]}>
               Copia de seguridad completa
@@ -320,6 +440,9 @@ export default function DatosScreen() {
                 style={[styles.previewLine, { color: colors.mutedForeground }]}
               >
                 {preview.wineCount} vinos · {preview.photoCount} fotos
+                {preview.locationCount > 0
+                  ? ` · ${preview.locationCount} ubicaciones`
+                  : ""}
                 {preview.duplicateCount > 0
                   ? ` · ${preview.duplicateCount} ya existentes`
                   : ""}
@@ -399,6 +522,38 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_500Medium",
   },
   panel: { borderWidth: 1, padding: 16, gap: 14 },
+  locationInputRow: { flexDirection: "row", gap: 9 },
+  locationInput: {
+    flex: 1,
+    minHeight: 44,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    fontSize: 14,
+    fontFamily: "Inter_400Regular",
+  },
+  addLocationButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  locationList: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  locationChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+    paddingLeft: 11,
+    paddingRight: 7,
+    paddingVertical: 7,
+    borderRadius: 18,
+  },
+  locationText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  emptyLocations: {
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    fontStyle: "italic",
+  },
   panelHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
   panelTitle: { flex: 1, fontSize: 17, fontFamily: "Inter_600SemiBold" },
   description: { fontSize: 13, lineHeight: 19, fontFamily: "Inter_400Regular" },

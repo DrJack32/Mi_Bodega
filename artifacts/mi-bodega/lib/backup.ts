@@ -11,7 +11,10 @@ import {
 } from "react-native-zip-archive";
 
 import type { Wine } from "@/lib/wineData";
-import { normalizeWineRecords } from "@/lib/wineData";
+import {
+  normalizeStorageLocations,
+  normalizeWineRecords,
+} from "@/lib/wineData";
 import {
   appCacheDirectory,
   deleteManagedPhotos,
@@ -21,7 +24,7 @@ import {
   removeDirectory,
 } from "@/lib/photoStorage";
 
-const BACKUP_VERSION = 2;
+const BACKUP_VERSION = 3;
 const MAX_ARCHIVE_ENTRIES = 100_005;
 const MAX_PHOTO_COUNT = 100_000;
 const MAX_UNCOMPRESSED_BYTES = 2_000_000_000;
@@ -38,9 +41,10 @@ type ManifestWine = Omit<Wine, "photos"> & { photos: ManifestPhoto[] };
 
 type BackupManifest = {
   app: "mi-bodega";
-  version: 2;
+  version: 2 | 3;
   exportedAt: string;
   wines: ManifestWine[];
+  storageLocations?: string[];
 };
 
 export type RestoreMode = "merge" | "replace";
@@ -53,6 +57,7 @@ export type BackupPreview = {
   wineCount: number;
   photoCount: number;
   duplicateCount: number;
+  locationCount: number;
   legacy: boolean;
 };
 
@@ -63,6 +68,7 @@ export type RestoreResult = {
   skippedWineCount: number;
   missingPhotoCount: number;
   createdPhotoUris: string[];
+  storageLocations: string[];
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -106,7 +112,7 @@ function validateManifest(raw: unknown): BackupManifest {
   if (!isRecord(raw) || raw.app !== "mi-bodega") {
     throw new Error("El archivo no es una copia de Mi Bodega.");
   }
-  if (raw.version !== BACKUP_VERSION) {
+  if (raw.version !== 2 && raw.version !== BACKUP_VERSION) {
     if (typeof raw.version === "number" && raw.version > BACKUP_VERSION) {
       throw new Error(
         "La copia pertenece a una version mas reciente de Mi Bodega.",
@@ -116,6 +122,12 @@ function validateManifest(raw: unknown): BackupManifest {
   }
   if (!Array.isArray(raw.wines) || raw.wines.length > 20_000) {
     throw new Error("La copia no contiene una coleccion valida.");
+  }
+  if (
+    raw.storageLocations !== undefined &&
+    !Array.isArray(raw.storageLocations)
+  ) {
+    throw new Error("La copia contiene ubicaciones de bodega no validas.");
   }
 
   const paths = new Set<string>();
@@ -257,7 +269,10 @@ async function extractAndReadManifest(uri: string) {
   }
 }
 
-export async function createBackupArchive(wines: Wine[]) {
+export async function createBackupArchive(
+  wines: Wine[],
+  storageLocations: string[] = [],
+) {
   if (Platform.OS === "web") {
     throw new Error(
       "La copia completa con fotografias se crea desde la aplicacion movil.",
@@ -326,6 +341,7 @@ export async function createBackupArchive(wines: Wine[]) {
       version: BACKUP_VERSION,
       exportedAt: new Date().toISOString(),
       wines: manifestWines,
+      storageLocations: normalizeStorageLocations(storageLocations),
     };
     const manifestFile = new File(source, "manifest.json");
     manifestFile.create({ intermediates: true });
@@ -338,7 +354,13 @@ export async function createBackupArchive(wines: Wine[]) {
     );
     if (!target.exists || target.size === 0)
       throw new Error("No se pudo crear el archivo de copia.");
-    return { uri: target.uri, filename, wineCount: wines.length, photoCount };
+    return {
+      uri: target.uri,
+      filename,
+      wineCount: wines.length,
+      photoCount,
+      locationCount: normalizeStorageLocations(storageLocations).length,
+    };
   } catch (error) {
     try {
       if (target.exists) target.delete();
@@ -366,6 +388,7 @@ export async function inspectBackup(
       wineCount: legacy.wines.length,
       photoCount: 0,
       duplicateCount: countDuplicates(legacy.wines, currentWines),
+      locationCount: 0,
       legacy: true,
     };
   }
@@ -386,6 +409,8 @@ export async function inspectBackup(
         0,
       ),
       duplicateCount: countDuplicates(normalized, currentWines),
+      locationCount: normalizeStorageLocations(manifest.storageLocations)
+        .length,
       legacy: false,
     };
   } finally {
@@ -396,6 +421,7 @@ export async function inspectBackup(
 async function restoreLegacy(
   uri: string,
   currentWines: Wine[],
+  currentLocations: string[],
   mode: RestoreMode,
 ): Promise<RestoreResult> {
   const legacy = parseLegacyBackup(await readTextFile(uri));
@@ -436,15 +462,19 @@ async function restoreLegacy(
     skippedWineCount: legacy.wines.length - restored.length,
     missingPhotoCount,
     createdPhotoUris,
+    storageLocations: currentLocations,
   };
 }
 
 export async function restoreBackup(
   preview: BackupPreview,
   currentWines: Wine[],
+  currentLocations: string[],
   mode: RestoreMode,
 ): Promise<RestoreResult> {
-  if (preview.legacy) return restoreLegacy(preview.uri, currentWines, mode);
+  if (preview.legacy) {
+    return restoreLegacy(preview.uri, currentWines, currentLocations, mode);
+  }
 
   const { manifest, extraction } = await extractAndReadManifest(preview.uri);
   const existingIds = new Set(currentWines.map((wine) => wine.id));
@@ -470,6 +500,9 @@ export async function restoreBackup(
       restoredRaw.push({ ...wine, photos });
     }
     const restored = normalizeWineRecords(restoredRaw);
+    const importedLocations = normalizeStorageLocations(
+      manifest.storageLocations,
+    );
     return {
       wines: mode === "merge" ? [...restored, ...currentWines] : restored,
       restoredWineCount: restored.length,
@@ -477,6 +510,13 @@ export async function restoreBackup(
       skippedWineCount: manifest.wines.length - restored.length,
       missingPhotoCount: 0,
       createdPhotoUris,
+      storageLocations:
+        mode === "merge" || manifest.storageLocations === undefined
+          ? normalizeStorageLocations([
+              ...currentLocations,
+              ...importedLocations,
+            ])
+          : importedLocations,
     };
   } catch (error) {
     deleteManagedPhotos(createdPhotoUris);

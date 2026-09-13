@@ -15,7 +15,11 @@ import {
   View,
 } from "react-native";
 import { useColors } from "@/hooks/useColors";
-import { WineFormData, WineType } from "@/contexts/WineContext";
+import {
+  InitialWineEntry,
+  WineFormData,
+  WineType,
+} from "@/contexts/WineContext";
 import { callOCR } from "@/lib/ocr";
 
 const WINE_TYPES: { value: WineType; label: string; color: string }[] = [
@@ -54,7 +58,8 @@ const EMPTY_FORM: WineFormData = {
 interface WineFormProps {
   initialValues?: Partial<WineFormData>;
   isEditing?: boolean;
-  onSave: (data: WineFormData) => Promise<void>;
+  storageLocations?: string[];
+  onSave: (data: WineFormData, entry?: InitialWineEntry) => Promise<void>;
   onCancel: () => void;
 }
 
@@ -94,6 +99,7 @@ function FieldLabel({
 export function WineForm({
   initialValues,
   isEditing = false,
+  storageLocations = [],
   onSave,
   onCancel,
 }: WineFormProps) {
@@ -105,10 +111,20 @@ export function WineForm({
   const [isSaving, setIsSaving] = useState(false);
   const [isOcrLoading, setIsOcrLoading] = useState(false);
   const [ocrPhotoIndex, setOcrPhotoIndex] = useState<number | null>(null);
+  const [entryMode, setEntryMode] = useState<"tasted" | "cellar" | null>(
+    isEditing ? "tasted" : null,
+  );
+  const [cellarLocation, setCellarLocation] = useState("");
+  const [cellarQuantity, setCellarQuantity] = useState("1");
+  const [cellarPrice, setCellarPrice] = useState("");
 
   useEffect(() => {
     setForm({ ...EMPTY_FORM, ...initialValues });
-  }, [initialValues]);
+    setEntryMode(isEditing ? "tasted" : null);
+    setCellarLocation("");
+    setCellarQuantity("1");
+    setCellarPrice("");
+  }, [initialValues, isEditing]);
 
   function set<K extends keyof WineFormData>(key: K, value: WineFormData[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -167,8 +183,8 @@ export function WineForm({
         const safeFields = Object.fromEntries(
           Object.entries(fields).filter(([key]) => {
             if (isEditing) return !prev[key as keyof WineFormData];
-            if (key === 'type') return prev.type === EMPTY_FORM.type;
-            if (key === 'volume') return prev.volume === EMPTY_FORM.volume;
+            if (key === "type") return prev.type === EMPTY_FORM.type;
+            if (key === "volume") return prev.volume === EMPTY_FORM.volume;
             return !prev[key as keyof WineFormData];
           }),
         );
@@ -208,9 +224,42 @@ export function WineForm({
       );
       return;
     }
+    if (!isEditing && !entryMode) {
+      Alert.alert(
+        "Elige el destino",
+        "Indica si esta botella se ha consumido o si quieres guardarla en tu bodega.",
+      );
+      return;
+    }
+    const quantity = Number.parseInt(cellarQuantity, 10);
+    if (!isEditing && entryMode === "cellar" && !cellarLocation.trim()) {
+      Alert.alert(
+        "Falta la ubicación",
+        "Indica dónde vas a guardar las botellas.",
+      );
+      return;
+    }
+    if (
+      !isEditing &&
+      entryMode === "cellar" &&
+      (!Number.isSafeInteger(quantity) || quantity < 1 || quantity > 10_000)
+    ) {
+      Alert.alert("Cantidad no válida", "Introduce entre 1 y 10.000 botellas.");
+      return;
+    }
     try {
       setIsSaving(true);
-      await onSave(form);
+      const entry: InitialWineEntry | undefined = isEditing
+        ? undefined
+        : entryMode === "cellar"
+          ? {
+              kind: "cellar",
+              location: cellarLocation.trim(),
+              quantity,
+              price: cellarPrice.trim(),
+            }
+          : { kind: "tasted" };
+      await onSave(form, entry);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
       const message =
@@ -540,148 +589,343 @@ export function WineForm({
           placeholderTextColor={colors.mutedForeground}
         />
 
-        {/* ── MI CATA ───────────────────────────── */}
-        <SectionHeader title="Mi cata" />
-
-        <View style={styles.row}>
-          <View style={styles.half}>
-            <FieldLabel label="Fecha" optional />
-            <TextInput
-              style={inputStyle}
-              value={form.date}
-              onChangeText={(v) => set("date", v)}
-              placeholder="DD/MM/AAAA"
-              placeholderTextColor={colors.mutedForeground}
-              keyboardType="numbers-and-punctuation"
-            />
-          </View>
-          <View style={styles.half}>
-            <FieldLabel label="Precio (€)" optional />
-            <TextInput
-              style={inputStyle}
-              value={form.price}
-              onChangeText={(v) => set("price", v)}
-              placeholder="12,50"
-              placeholderTextColor={colors.mutedForeground}
-              keyboardType="decimal-pad"
-            />
-          </View>
-        </View>
-
-        <FieldLabel label="Lugar" optional />
-        <TextInput
-          style={inputStyle}
-          value={form.location}
-          onChangeText={(v) => set("location", v)}
-          placeholder="Restaurante, casa, viaje..."
-          placeholderTextColor={colors.mutedForeground}
-        />
-
-        <FieldLabel label="Puntuación (1-10)" optional />
-        <View style={styles.ratingRow}>
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-            <Pressable
-              key={n}
-              onPress={() => {
-                set("rating", form.rating === n ? 0 : n);
-                Haptics.selectionAsync();
-              }}
-              style={[
-                styles.ratingDot,
-                {
-                  backgroundColor:
-                    form.rating >= n ? colors.primary : colors.secondary,
-                  borderRadius: 8,
-                },
-              ]}
-            >
-              <Text
+        {!isEditing && (
+          <>
+            <SectionHeader title="¿Qué vas a hacer con esta botella?" />
+            <View style={styles.destinationRow}>
+              <Pressable
+                onPress={() => setEntryMode("tasted")}
                 style={[
-                  styles.ratingDotText,
-                  { color: form.rating >= n ? "#FFF" : colors.mutedForeground },
-                ]}
-              >
-                {n}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <View style={[styles.toggleRow, { borderColor: colors.border }]}>
-          <Text style={[styles.toggleLabel, { color: colors.foreground }]}>
-            ¿Lo repetiría?
-          </Text>
-          <View style={styles.toggleOptions}>
-            <Pressable
-              onPress={() =>
-                set("wouldRepeat", form.wouldRepeat === true ? null : true)
-              }
-              style={[
-                styles.toggleBtn,
-                {
-                  backgroundColor:
-                    form.wouldRepeat === true ? "#27AE60" : colors.secondary,
-                  borderRadius: colors.radius / 2,
-                },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.toggleBtnText,
+                  styles.destinationCard,
                   {
-                    color:
-                      form.wouldRepeat === true
-                        ? "#FFF"
-                        : colors.mutedForeground,
+                    backgroundColor:
+                      entryMode === "tasted" ? colors.secondary : colors.card,
+                    borderColor:
+                      entryMode === "tasted" ? colors.primary : colors.border,
+                    borderRadius: colors.radius,
                   },
                 ]}
               >
-                Sí
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() =>
-                set("wouldRepeat", form.wouldRepeat === false ? null : false)
-              }
-              style={[
-                styles.toggleBtn,
-                {
-                  backgroundColor:
-                    form.wouldRepeat === false
-                      ? colors.destructive
-                      : colors.secondary,
-                  borderRadius: colors.radius / 2,
-                },
-              ]}
-            >
-              <Text
+                <Ionicons
+                  name="wine-outline"
+                  size={26}
+                  color={colors.primary}
+                />
+                <Text
+                  style={[
+                    styles.destinationTitle,
+                    { color: colors.foreground },
+                  ]}
+                >
+                  Consumir o ya consumida
+                </Text>
+                <Text
+                  style={[
+                    styles.destinationText,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  Registrar una cata ahora, también con una fecha anterior.
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setEntryMode("cellar")}
                 style={[
-                  styles.toggleBtnText,
+                  styles.destinationCard,
                   {
-                    color:
-                      form.wouldRepeat === false
-                        ? "#FFF"
-                        : colors.mutedForeground,
+                    backgroundColor:
+                      entryMode === "cellar" ? colors.secondary : colors.card,
+                    borderColor:
+                      entryMode === "cellar" ? colors.primary : colors.border,
+                    borderRadius: colors.radius,
                   },
                 ]}
               >
-                No
-              </Text>
-            </Pressable>
-          </View>
-        </View>
+                <Ionicons
+                  name="archive-outline"
+                  size={26}
+                  color={colors.primary}
+                />
+                <Text
+                  style={[
+                    styles.destinationTitle,
+                    { color: colors.foreground },
+                  ]}
+                >
+                  Guardar en bodega
+                </Text>
+                <Text
+                  style={[
+                    styles.destinationText,
+                    { color: colors.mutedForeground },
+                  ]}
+                >
+                  Anotar cuántas tienes y dónde están guardadas.
+                </Text>
+              </Pressable>
+            </View>
+          </>
+        )}
 
-        <FieldLabel label="Notas personales" optional />
-        <TextInput
-          style={textAreaStyle}
-          value={form.notes}
-          onChangeText={(v) => set("notes", v)}
-          placeholder="Aromas, sabores, maridaje, impresiones..."
-          placeholderTextColor={colors.mutedForeground}
-          multiline
-          numberOfLines={4}
-          textAlignVertical="top"
-        />
+        {!isEditing && entryMode === "cellar" && (
+          <>
+            <FieldLabel label="Ubicación en la bodega" />
+            <TextInput
+              style={inputStyle}
+              value={cellarLocation}
+              onChangeText={setCellarLocation}
+              placeholder="Botellero principal, nevera de vinos..."
+              placeholderTextColor={colors.mutedForeground}
+            />
+            {storageLocations.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.suggestionRow}
+              >
+                {storageLocations.map((location) => (
+                  <Pressable
+                    key={location}
+                    onPress={() => setCellarLocation(location)}
+                    style={[
+                      styles.suggestionChip,
+                      {
+                        backgroundColor:
+                          cellarLocation === location
+                            ? colors.primary
+                            : colors.secondary,
+                        borderRadius: 18,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.suggestionText,
+                        {
+                          color:
+                            cellarLocation === location
+                              ? "#FFF"
+                              : colors.foreground,
+                        },
+                      ]}
+                    >
+                      {location}
+                    </Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            )}
+            <View style={styles.row}>
+              <View style={styles.half}>
+                <FieldLabel label="Cantidad" />
+                <View
+                  style={[
+                    styles.quantityRow,
+                    {
+                      borderColor: colors.border,
+                      borderRadius: colors.radius / 1.5,
+                      backgroundColor: colors.card,
+                    },
+                  ]}
+                >
+                  <Pressable
+                    onPress={() =>
+                      setCellarQuantity(
+                        String(Math.max(1, (Number(cellarQuantity) || 1) - 1)),
+                      )
+                    }
+                    style={styles.quantityButton}
+                  >
+                    <Ionicons name="remove" size={20} color={colors.primary} />
+                  </Pressable>
+                  <TextInput
+                    style={[styles.quantityInput, { color: colors.foreground }]}
+                    value={cellarQuantity}
+                    onChangeText={setCellarQuantity}
+                    keyboardType="number-pad"
+                    selectTextOnFocus
+                  />
+                  <Pressable
+                    onPress={() =>
+                      setCellarQuantity(
+                        String((Number(cellarQuantity) || 0) + 1),
+                      )
+                    }
+                    style={styles.quantityButton}
+                  >
+                    <Ionicons name="add" size={20} color={colors.primary} />
+                  </Pressable>
+                </View>
+              </View>
+              <View style={styles.half}>
+                <FieldLabel label="Precio por botella (€)" optional />
+                <TextInput
+                  style={inputStyle}
+                  value={cellarPrice}
+                  onChangeText={setCellarPrice}
+                  placeholder="12,50"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+            </View>
+          </>
+        )}
+
+        {(isEditing || entryMode === "tasted") && (
+          <>
+            {/* ── MI CATA ───────────────────────────── */}
+            <SectionHeader title={isEditing ? "Última cata" : "Mi cata"} />
+
+            <View style={styles.row}>
+              <View style={styles.half}>
+                <FieldLabel label="Fecha" optional />
+                <TextInput
+                  style={inputStyle}
+                  value={form.date}
+                  onChangeText={(v) => set("date", v)}
+                  placeholder="DD/MM/AAAA"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="numbers-and-punctuation"
+                />
+              </View>
+              <View style={styles.half}>
+                <FieldLabel label="Precio (€)" optional />
+                <TextInput
+                  style={inputStyle}
+                  value={form.price}
+                  onChangeText={(v) => set("price", v)}
+                  placeholder="12,50"
+                  placeholderTextColor={colors.mutedForeground}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+            </View>
+
+            <FieldLabel label="Lugar" optional />
+            <TextInput
+              style={inputStyle}
+              value={form.location}
+              onChangeText={(v) => set("location", v)}
+              placeholder="Restaurante, casa, viaje..."
+              placeholderTextColor={colors.mutedForeground}
+            />
+
+            <FieldLabel label="Puntuación (1-10)" optional />
+            <View style={styles.ratingRow}>
+              {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                <Pressable
+                  key={n}
+                  onPress={() => {
+                    set("rating", form.rating === n ? 0 : n);
+                    Haptics.selectionAsync();
+                  }}
+                  style={[
+                    styles.ratingDot,
+                    {
+                      backgroundColor:
+                        form.rating >= n ? colors.primary : colors.secondary,
+                      borderRadius: 8,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.ratingDotText,
+                      {
+                        color:
+                          form.rating >= n ? "#FFF" : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    {n}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <View style={[styles.toggleRow, { borderColor: colors.border }]}>
+              <Text style={[styles.toggleLabel, { color: colors.foreground }]}>
+                ¿Lo repetiría?
+              </Text>
+              <View style={styles.toggleOptions}>
+                <Pressable
+                  onPress={() =>
+                    set("wouldRepeat", form.wouldRepeat === true ? null : true)
+                  }
+                  style={[
+                    styles.toggleBtn,
+                    {
+                      backgroundColor:
+                        form.wouldRepeat === true
+                          ? "#27AE60"
+                          : colors.secondary,
+                      borderRadius: colors.radius / 2,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.toggleBtnText,
+                      {
+                        color:
+                          form.wouldRepeat === true
+                            ? "#FFF"
+                            : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    Sí
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() =>
+                    set(
+                      "wouldRepeat",
+                      form.wouldRepeat === false ? null : false,
+                    )
+                  }
+                  style={[
+                    styles.toggleBtn,
+                    {
+                      backgroundColor:
+                        form.wouldRepeat === false
+                          ? colors.destructive
+                          : colors.secondary,
+                      borderRadius: colors.radius / 2,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.toggleBtnText,
+                      {
+                        color:
+                          form.wouldRepeat === false
+                            ? "#FFF"
+                            : colors.mutedForeground,
+                      },
+                    ]}
+                  >
+                    No
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <FieldLabel label="Notas personales" optional />
+            <TextInput
+              style={textAreaStyle}
+              value={form.notes}
+              onChangeText={(v) => set("notes", v)}
+              placeholder="Aromas, sabores, maridaje, impresiones..."
+              placeholderTextColor={colors.mutedForeground}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+          </>
+        )}
 
         <View style={{ height: 40 }} />
       </ScrollView>
@@ -718,6 +962,46 @@ const styles = StyleSheet.create({
   },
   scroll: { flex: 1 },
   content: { padding: 16, gap: 10 },
+  destinationRow: { flexDirection: "row", gap: 10 },
+  destinationCard: {
+    flex: 1,
+    minHeight: 142,
+    borderWidth: 1.5,
+    padding: 13,
+    gap: 7,
+  },
+  destinationTitle: {
+    fontSize: 14,
+    lineHeight: 18,
+    fontFamily: "Inter_700Bold",
+  },
+  destinationText: {
+    fontSize: 12,
+    lineHeight: 17,
+    fontFamily: "Inter_400Regular",
+  },
+  suggestionRow: { gap: 8, paddingBottom: 4 },
+  suggestionChip: { paddingHorizontal: 12, paddingVertical: 7 },
+  suggestionText: { fontSize: 12, fontFamily: "Inter_500Medium" },
+  quantityRow: {
+    minHeight: 46,
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  quantityButton: {
+    width: 38,
+    minHeight: 44,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quantityInput: {
+    flex: 1,
+    textAlign: "center",
+    fontSize: 16,
+    fontFamily: "Inter_600SemiBold",
+    paddingVertical: 8,
+  },
   ocrSuccessBanner: {
     flexDirection: "row",
     alignItems: "flex-start",

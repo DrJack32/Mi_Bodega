@@ -24,33 +24,57 @@ import {
   pruneOrphanPhotos,
 } from "@/lib/photoStorage";
 import {
+  createStock,
+  createTasting,
+  normalizeStorageLocations,
   normalizeWineRecords,
+  syncWineSummary,
+  type InitialWineEntry,
+  type StockFormData,
+  type TastingFormData,
   type Wine,
   type WineFormData,
+  type WineStock,
+  type WineTasting,
   type WineType,
 } from "@/lib/wineData";
 
 export type {
   BackupPreview,
+  InitialWineEntry,
   RestoreMode,
   RestoreResult,
+  StockFormData,
+  TastingFormData,
   Wine,
   WineFormData,
+  WineStock,
+  WineTasting,
   WineType,
 };
 
 const STORAGE_KEY = "@mi_bodega_wines_v1";
+const LOCATIONS_KEY = "@mi_bodega_storage_locations_v1";
 const RECOVERY_KEY = "@mi_bodega_wines_recovery_v1";
 
 interface WineContextValue {
   wines: Wine[];
+  storageLocations: string[];
   isLoading: boolean;
   storageWarning: string | null;
-  addWine: (data: WineFormData) => Promise<Wine>;
+  addWine: (data: WineFormData, entry?: InitialWineEntry) => Promise<Wine>;
   updateWine: (id: string, data: Partial<WineFormData>) => Promise<void>;
   deleteWine: (id: string) => Promise<void>;
   toggleFavorite: (id: string) => Promise<void>;
   getWine: (id: string) => Wine | undefined;
+  addTasting: (
+    wineId: string,
+    data: TastingFormData,
+    stockEntryId?: string,
+  ) => Promise<void>;
+  addStock: (wineId: string, data: StockFormData) => Promise<void>;
+  addStorageLocation: (location: string) => Promise<void>;
+  removeStorageLocation: (location: string) => Promise<void>;
   createBackup: () => ReturnType<typeof createBackupArchive>;
   inspectBackup: (uri: string, name: string) => Promise<BackupPreview>;
   restoreBackup: (
@@ -59,7 +83,8 @@ interface WineContextValue {
   ) => Promise<RestoreResult>;
 }
 
-type Mutation<T> = (current: Wine[]) => Promise<T>;
+type AppState = { wines: Wine[]; storageLocations: string[] };
+type Mutation<T> = (current: AppState) => Promise<T>;
 
 const WineContext = createContext<WineContextValue | null>(null);
 
@@ -72,35 +97,46 @@ function newlyCreatedPhotos(before: string[], after: string[]) {
   return after.filter((uri) => !existing.has(uri));
 }
 
+function withLocation(locations: string[], candidate: string) {
+  return normalizeStorageLocations([...locations, candidate]);
+}
+
 export function WineProvider({ children }: { children: React.ReactNode }) {
   const [wines, setWines] = useState<Wine[]>([]);
+  const [storageLocations, setStorageLocations] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [storageWarning, setStorageWarning] = useState<string | null>(null);
-  const winesRef = useRef<Wine[]>([]);
+  const stateRef = useRef<AppState>({ wines: [], storageLocations: [] });
   const mutationQueue = useRef<Promise<void>>(Promise.resolve());
   const mountedRef = useRef(true);
 
-  const setCurrentWines = useCallback((next: Wine[]) => {
-    winesRef.current = next;
-    if (mountedRef.current) setWines(next);
+  const setCurrentState = useCallback((next: AppState) => {
+    stateRef.current = next;
+    if (mountedRef.current) {
+      setWines(next.wines);
+      setStorageLocations(next.storageLocations);
+    }
   }, []);
 
-  const persist = useCallback(async (updated: Wine[]) => {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  const persist = useCallback(async (next: AppState) => {
+    await AsyncStorage.multiSet([
+      [STORAGE_KEY, JSON.stringify(next.wines)],
+      [LOCATIONS_KEY, JSON.stringify(next.storageLocations)],
+    ]);
   }, []);
 
   const commit = useCallback(
-    async (updated: Wine[]) => {
-      await persist(updated);
-      setCurrentWines(updated);
+    async (next: AppState) => {
+      await persist(next);
+      setCurrentState(next);
     },
-    [persist, setCurrentWines],
+    [persist, setCurrentState],
   );
 
   const runMutation = useCallback(function enqueueMutation<T>(
     operation: Mutation<T>,
   ): Promise<T> {
-    const task = mutationQueue.current.then(() => operation(winesRef.current));
+    const task = mutationQueue.current.then(() => operation(stateRef.current));
     mutationQueue.current = task.then(
       () => undefined,
       () => undefined,
@@ -114,8 +150,28 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
 
     async function load() {
       try {
-        const raw = await AsyncStorage.getItem(STORAGE_KEY);
-        if (!raw) return;
+        const values = await AsyncStorage.multiGet([
+          STORAGE_KEY,
+          LOCATIONS_KEY,
+        ]);
+        const raw = values[0][1];
+        const rawLocations = values[1][1];
+        let locations: string[] = [];
+        try {
+          locations = normalizeStorageLocations(
+            rawLocations ? JSON.parse(rawLocations) : [],
+          );
+        } catch {
+          setStorageWarning(
+            "No se pudieron leer las ubicaciones preparadas. Los vinos se han conservado.",
+          );
+        }
+
+        if (!raw) {
+          if (!cancelled)
+            setCurrentState({ wines: [], storageLocations: locations });
+          return;
+        }
 
         let parsed: unknown;
         let normalized: Wine[];
@@ -156,7 +212,6 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
                 createdPhotoUris.push(persisted);
               }
             } catch {
-              // Conservamos la referencia: borrar silenciosamente una foto impediria recuperarla.
               photos.push(uri);
               unavailableCount += 1;
             }
@@ -164,15 +219,16 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
           migrated.push({ ...wine, photos });
         }
 
+        const next = { wines: migrated, storageLocations: locations };
         try {
           const needsNormalization =
             JSON.stringify(parsed) !== JSON.stringify(normalized);
-          if (migratedCount > 0 || needsNormalization) await persist(migrated);
-          if (!cancelled) setCurrentWines(migrated);
+          if (migratedCount > 0 || needsNormalization) await persist(next);
+          if (!cancelled) setCurrentState(next);
         } catch {
           deleteManagedPhotos(createdPhotoUris);
           if (!cancelled) {
-            setCurrentWines(normalized);
+            setCurrentState({ wines: normalized, storageLocations: locations });
             setStorageWarning(
               "No se pudieron consolidar las fotografias en el almacenamiento permanente.",
             );
@@ -201,24 +257,35 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       mountedRef.current = false;
     };
-  }, [persist, setCurrentWines]);
+  }, [persist, setCurrentState]);
 
   const createBackup = useCallback(async () => {
     await mutationQueue.current;
-    return createBackupArchive(winesRef.current);
+    return createBackupArchive(
+      stateRef.current.wines,
+      stateRef.current.storageLocations,
+    );
   }, []);
 
   const inspectBackup = useCallback(async (uri: string, name: string) => {
     await mutationQueue.current;
-    return inspectBackupFile(uri, name, winesRef.current);
+    return inspectBackupFile(uri, name, stateRef.current.wines);
   }, []);
 
   const restoreBackup = useCallback(
     (preview: BackupPreview, mode: RestoreMode) =>
       runMutation(async (current) => {
-        const result = await restoreBackupFile(preview, current, mode);
+        const result = await restoreBackupFile(
+          preview,
+          current.wines,
+          current.storageLocations,
+          mode,
+        );
         try {
-          await commit(result.wines);
+          await commit({
+            wines: result.wines,
+            storageLocations: result.storageLocations,
+          });
         } catch (error) {
           deleteManagedPhotos(result.createdPhotoUris);
           throw error;
@@ -230,18 +297,48 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
   );
 
   const addWine = useCallback(
-    (data: WineFormData): Promise<Wine> =>
+    (data: WineFormData, entry: InitialWineEntry = { kind: "tasted" }) =>
       runMutation(async (current) => {
         const photos = await persistPhotos(data.photos);
         const createdPhotoUris = newlyCreatedPhotos(data.photos, photos);
-        const wine: Wine = {
+        const tasting =
+          entry.kind === "tasted"
+            ? createTasting({
+                date: data.date,
+                location: data.location,
+                price: data.price,
+                rating: data.rating,
+                wouldRepeat: data.wouldRepeat,
+                notes: data.notes,
+                quantity: 1,
+                fromStock: false,
+              })
+            : null;
+        const stock =
+          entry.kind === "cellar"
+            ? createStock({
+                location: entry.location,
+                quantity: entry.quantity,
+                price: entry.price,
+              })
+            : null;
+        const wine = syncWineSummary({
           ...data,
           photos,
           id: Crypto.randomUUID(),
           createdAt: new Date().toISOString(),
-        };
+          tastings: tasting ? [tasting] : [],
+          stock: stock ? [stock] : [],
+        });
+        const locations =
+          stock && stock.location
+            ? withLocation(current.storageLocations, stock.location)
+            : current.storageLocations;
         try {
-          await commit([wine, ...current]);
+          await commit({
+            wines: [wine, ...current.wines],
+            storageLocations: locations,
+          });
           return wine;
         } catch (error) {
           deleteManagedPhotos(createdPhotoUris);
@@ -254,7 +351,7 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
   const updateWine = useCallback(
     (id: string, data: Partial<WineFormData>) =>
       runMutation(async (current) => {
-        const original = current.find((wine) => wine.id === id);
+        const original = current.wines.find((wine) => wine.id === id);
         if (!original)
           throw new Error("El vino que quieres editar ya no existe.");
 
@@ -264,11 +361,36 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
         const createdPhotoUris = data.photos
           ? newlyCreatedPhotos(data.photos, photos)
           : [];
-        const updated = current.map((wine) =>
-          wine.id === id ? { ...wine, ...data, photos } : wine,
+        const latest = original.tastings[0];
+        const updatesTasting =
+          latest &&
+          ["date", "location", "price", "rating", "wouldRepeat", "notes"].some(
+            (key) => key in data,
+          );
+        const tastings = updatesTasting
+          ? [
+              {
+                ...latest,
+                date: data.date ?? latest.date,
+                location: data.location ?? latest.location,
+                price: data.price ?? latest.price,
+                rating: data.rating ?? latest.rating,
+                wouldRepeat:
+                  "wouldRepeat" in data
+                    ? (data.wouldRepeat ?? null)
+                    : latest.wouldRepeat,
+                notes: data.notes ?? latest.notes,
+              },
+              ...original.tastings.slice(1),
+            ]
+          : original.tastings;
+        const updated = current.wines.map((wine) =>
+          wine.id === id
+            ? syncWineSummary({ ...wine, ...data, photos, tastings })
+            : wine,
         );
         try {
-          await commit(updated);
+          await commit({ ...current, wines: updated });
         } catch (error) {
           deleteManagedPhotos(createdPhotoUris);
           throw error;
@@ -278,11 +400,90 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
     [commit, runMutation],
   );
 
+  const addTasting = useCallback(
+    (wineId: string, data: TastingFormData, stockEntryId?: string) =>
+      runMutation(async (current) => {
+        const target = current.wines.find((wine) => wine.id === wineId);
+        if (!target) throw new Error("El vino ya no existe.");
+        let stock = target.stock;
+        if (stockEntryId) {
+          const entry = stock.find((item) => item.id === stockEntryId);
+          if (!entry || entry.quantity < data.quantity) {
+            throw new Error(
+              "Ya no quedan suficientes botellas en esa ubicacion.",
+            );
+          }
+          stock = stock.map((item) =>
+            item.id === stockEntryId
+              ? { ...item, quantity: item.quantity - data.quantity }
+              : item,
+          );
+        }
+        const tasting = createTasting({
+          ...data,
+          fromStock: Boolean(stockEntryId),
+        });
+        const updated = current.wines.map((wine) =>
+          wine.id === wineId
+            ? syncWineSummary({
+                ...wine,
+                stock,
+                tastings: [tasting, ...wine.tastings],
+              })
+            : wine,
+        );
+        await commit({ ...current, wines: updated });
+      }),
+    [commit, runMutation],
+  );
+
+  const addStock = useCallback(
+    (wineId: string, data: StockFormData) =>
+      runMutation(async (current) => {
+        const target = current.wines.find((wine) => wine.id === wineId);
+        if (!target) throw new Error("El vino ya no existe.");
+        const entry = createStock(data);
+        const updated = current.wines.map((wine) =>
+          wine.id === wineId
+            ? { ...wine, stock: [entry, ...wine.stock] }
+            : wine,
+        );
+        const locations = withLocation(
+          current.storageLocations,
+          entry.location,
+        );
+        await commit({ wines: updated, storageLocations: locations });
+      }),
+    [commit, runMutation],
+  );
+
+  const addStorageLocation = useCallback(
+    (location: string) =>
+      runMutation(async (current) => {
+        const locations = withLocation(current.storageLocations, location);
+        if (locations.length === current.storageLocations.length) return;
+        await commit({ ...current, storageLocations: locations });
+      }),
+    [commit, runMutation],
+  );
+
+  const removeStorageLocation = useCallback(
+    (location: string) =>
+      runMutation(async (current) => {
+        const locations = current.storageLocations.filter(
+          (item) =>
+            item.toLocaleLowerCase("es") !== location.toLocaleLowerCase("es"),
+        );
+        await commit({ ...current, storageLocations: locations });
+      }),
+    [commit, runMutation],
+  );
+
   const deleteWine = useCallback(
     (id: string) =>
       runMutation(async (current) => {
-        const updated = current.filter((wine) => wine.id !== id);
-        await commit(updated);
+        const updated = current.wines.filter((wine) => wine.id !== id);
+        await commit({ ...current, wines: updated });
         pruneOrphanPhotos(allPhotoUris(updated));
       }),
     [commit, runMutation],
@@ -291,10 +492,10 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
   const toggleFavorite = useCallback(
     (id: string) =>
       runMutation(async (current) => {
-        const updated = current.map((wine) =>
+        const updated = current.wines.map((wine) =>
           wine.id === id ? { ...wine, isFavorite: !wine.isFavorite } : wine,
         );
-        await commit(updated);
+        await commit({ ...current, wines: updated });
       }),
     [commit, runMutation],
   );
@@ -308,6 +509,7 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
     <WineContext.Provider
       value={{
         wines,
+        storageLocations,
         isLoading,
         storageWarning,
         addWine,
@@ -315,6 +517,10 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
         deleteWine,
         toggleFavorite,
         getWine,
+        addTasting,
+        addStock,
+        addStorageLocation,
+        removeStorageLocation,
         createBackup,
         inspectBackup,
         restoreBackup,
