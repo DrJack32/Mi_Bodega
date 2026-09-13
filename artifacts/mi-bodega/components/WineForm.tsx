@@ -15,6 +15,9 @@ import {
   View,
 } from "react-native";
 import { useColors } from "@/hooks/useColors";
+import { CoverEditor } from "@/components/CoverEditor";
+import { FramedWinePhoto } from "@/components/FramedWinePhoto";
+import { PhotoViewer } from "@/components/PhotoViewer";
 import {
   InitialWineEntry,
   WineFormData,
@@ -33,6 +36,18 @@ const WINE_TYPES: { value: WineType; label: string; color: string }[] = [
   { value: "otro", label: "Otro", color: "#6B7280" },
 ];
 
+const AGING_PRESETS = [
+  "Joven / Sin crianza",
+  "Roble",
+  "Crianza",
+  "Reserva",
+  "Gran Reserva",
+  "Sobre lías",
+  "Crianza biológica",
+  "Crianza oxidativa",
+  "Criaderas y solera",
+];
+
 const EMPTY_FORM: WineFormData = {
   photos: [],
   name: "",
@@ -43,8 +58,13 @@ const EMPTY_FORM: WineFormData = {
   region: "",
   denomination: "",
   grapes: "",
+  agingCategory: "",
+  agingMonths: "",
   alcohol: "",
   volume: "750ml",
+  coverZoom: 1,
+  coverOffsetX: 0,
+  coverOffsetY: 0,
   date: "",
   location: "",
   price: "",
@@ -117,6 +137,9 @@ export function WineForm({
   const [cellarLocation, setCellarLocation] = useState("");
   const [cellarQuantity, setCellarQuantity] = useState("1");
   const [cellarPrice, setCellarPrice] = useState("");
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerIndex, setViewerIndex] = useState(0);
+  const [coverEditorOpen, setCoverEditorOpen] = useState(false);
 
   useEffect(() => {
     setForm({ ...EMPTY_FORM, ...initialValues });
@@ -210,18 +233,28 @@ export function WineForm({
   };
 
   const removePhoto = (index: number) => {
-    set(
-      "photos",
-      form.photos.filter((_, i) => i !== index),
-    );
+    setForm((prev) => ({
+      ...prev,
+      photos: prev.photos.filter((_, i) => i !== index),
+      ...(index === 0
+        ? { coverZoom: 1, coverOffsetX: 0, coverOffsetY: 0 }
+        : {}),
+    }));
   };
 
   const makeCover = (index: number) => {
     if (index <= 0 || index >= form.photos.length) return;
-    set("photos", [
-      form.photos[index],
-      ...form.photos.filter((_, photoIndex) => photoIndex !== index),
-    ]);
+    setForm((prev) => ({
+      ...prev,
+      photos: [
+        prev.photos[index],
+        ...prev.photos.filter((_, photoIndex) => photoIndex !== index),
+      ],
+      coverZoom: 1,
+      coverOffsetX: 0,
+      coverOffsetY: 0,
+    }));
+    setViewerIndex(0);
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
@@ -473,11 +506,36 @@ export function WineForm({
                     },
                   ]}
                 >
-                  <Image
-                    source={{ uri }}
+                  <Pressable
+                    onPress={() => {
+                      setViewerIndex(i);
+                      setViewerOpen(true);
+                    }}
                     style={styles.photoImage}
-                    contentFit="cover"
-                  />
+                    accessibilityRole="button"
+                    accessibilityLabel={`Ver y ampliar foto ${i + 1}`}
+                  >
+                    {i === 0 ? (
+                      <FramedWinePhoto
+                        uri={uri}
+                        framing={{
+                          zoom: form.coverZoom,
+                          offsetX: form.coverOffsetX,
+                          offsetY: form.coverOffsetY,
+                        }}
+                        style={StyleSheet.absoluteFill}
+                      />
+                    ) : (
+                      <Image
+                        source={{ uri }}
+                        style={StyleSheet.absoluteFill}
+                        contentFit="contain"
+                      />
+                    )}
+                    <View style={styles.expandPhotoBadge}>
+                      <Ionicons name="expand-outline" size={16} color="#FFF" />
+                    </View>
+                  </Pressable>
 
                   <View
                     style={[
@@ -539,6 +597,16 @@ export function WineForm({
                       >
                         <Ionicons name="star-outline" size={14} color={colors.primary} />
                         <Text style={[styles.makeCoverText, { color: colors.primary }]}>Portada</Text>
+                      </Pressable>
+                    )}
+
+                    {i === 0 && (
+                      <Pressable
+                        onPress={() => setCoverEditorOpen(true)}
+                        style={[styles.makeCoverBtn, { borderColor: colors.primary }]}
+                      >
+                        <Ionicons name="crop-outline" size={15} color={colors.primary} />
+                        <Text style={[styles.makeCoverText, { color: colors.primary }]}>Encuadrar</Text>
                       </Pressable>
                     )}
 
@@ -680,6 +748,54 @@ export function WineForm({
           placeholder="Tempranillo, Garnacha..."
           placeholderTextColor={colors.mutedForeground}
         />
+
+        <FieldLabel label="Categoría o tipo de crianza" optional />
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.agingPresets}
+        >
+          {AGING_PRESETS.map((preset) => {
+            const selected = form.agingCategory === preset;
+            return (
+              <Pressable
+                key={preset}
+                onPress={() => set("agingCategory", selected ? "" : preset)}
+                style={[
+                  styles.agingChip,
+                  {
+                    backgroundColor: selected ? colors.primary : colors.secondary,
+                    borderColor: selected ? colors.primary : colors.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.agingChipText, { color: selected ? "#FFF" : colors.foreground }]}>
+                  {preset}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        <TextInput
+          style={inputStyle}
+          value={form.agingCategory}
+          onChangeText={(value) => set("agingCategory", value)}
+          placeholder="Elige una opción o escribe otra denominación"
+          placeholderTextColor={colors.mutedForeground}
+        />
+
+        <FieldLabel label="Tiempo de crianza en meses" optional />
+        <TextInput
+          style={inputStyle}
+          value={form.agingMonths}
+          onChangeText={(value) => set("agingMonths", value.replace(/[^0-9]/g, "").slice(0, 3))}
+          placeholder="Ej: 12, 18, 24..."
+          placeholderTextColor={colors.mutedForeground}
+          keyboardType="number-pad"
+        />
+        <Text style={[styles.agingHelp, { color: colors.mutedForeground }]}>
+          La categoría legal depende de cada denominación; puedes escribir cualquier término que figure en la etiqueta.
+        </Text>
 
         {!isEditing && (
           <>
@@ -1021,6 +1137,36 @@ export function WineForm({
 
         <View style={{ height: 40 }} />
       </ScrollView>
+      <PhotoViewer
+        visible={viewerOpen}
+        photos={form.photos}
+        index={Math.min(viewerIndex, Math.max(0, form.photos.length - 1))}
+        onIndexChange={setViewerIndex}
+        onUseAsCover={(index) => {
+          if (index > 0) makeCover(index);
+          setViewerOpen(false);
+          setTimeout(() => setCoverEditorOpen(true), 220);
+        }}
+        onClose={() => setViewerOpen(false)}
+      />
+      <CoverEditor
+        visible={coverEditorOpen}
+        uri={form.photos[0]}
+        initial={{
+          zoom: form.coverZoom,
+          offsetX: form.coverOffsetX,
+          offsetY: form.coverOffsetY,
+        }}
+        onSave={(framing) =>
+          setForm((prev) => ({
+            ...prev,
+            coverZoom: framing.zoom,
+            coverOffsetX: framing.offsetX,
+            coverOffsetY: framing.offsetY,
+          }))
+        }
+        onClose={() => setCoverEditorOpen(false)}
+      />
     </View>
   );
 }
@@ -1162,6 +1308,17 @@ const styles = StyleSheet.create({
   analyzeAllText: { fontSize: 14, fontFamily: "Inter_700Bold" },
   photoCard: { overflow: "hidden", borderWidth: 1, position: "relative" },
   photoImage: { width: "100%", height: 200 },
+  expandPhotoBadge: {
+    position: "absolute",
+    right: 10,
+    bottom: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "rgba(0,0,0,0.58)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   coverBadge: {
     position: "absolute",
     top: 10,
@@ -1177,11 +1334,13 @@ const styles = StyleSheet.create({
   photoCardActions: {
     padding: 10,
     flexDirection: "row",
+    flexWrap: "wrap",
     alignItems: "center",
     gap: 10,
   },
   extractBtn: {
-    flex: 1,
+    flexBasis: "100%",
+    flexGrow: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1191,6 +1350,7 @@ const styles = StyleSheet.create({
   },
   extractBtnText: { color: "#FFF", fontSize: 14, fontFamily: "Inter_700Bold" },
   makeCoverBtn: {
+    flex: 1,
     height: 36,
     borderWidth: 1,
     borderRadius: 8,
@@ -1202,6 +1362,7 @@ const styles = StyleSheet.create({
   },
   makeCoverText: { fontSize: 12, fontFamily: "Inter_700Bold" },
   removeBtn: {
+    flexShrink: 0,
     width: 36,
     height: 36,
     borderRadius: 8,
@@ -1227,6 +1388,10 @@ const styles = StyleSheet.create({
   half: { flex: 1 },
   typeChip: { paddingHorizontal: 14, paddingVertical: 8, borderWidth: 1 },
   typeChipText: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  agingPresets: { gap: 7, paddingBottom: 3 },
+  agingChip: { borderWidth: 1, borderRadius: 18, paddingHorizontal: 11, paddingVertical: 7 },
+  agingChipText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  agingHelp: { fontSize: 11, lineHeight: 16, fontFamily: "Inter_400Regular", marginTop: -3 },
   ratingRow: { flexDirection: "row", gap: 6, flexWrap: "wrap" },
   ratingDot: {
     width: 34,

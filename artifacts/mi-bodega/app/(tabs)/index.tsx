@@ -86,6 +86,7 @@ export default function BibliotecaScreen() {
           w.region.toLowerCase().includes(q) ||
           w.denomination.toLowerCase().includes(q) ||
           w.grapes.toLowerCase().includes(q) ||
+          w.agingCategory.toLowerCase().includes(q) ||
           w.vintage.includes(q) ||
           w.stock.some((entry) => entry.location.toLowerCase().includes(q)) ||
           w.tastings.some((tasting) =>

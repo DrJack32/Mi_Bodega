@@ -1,10 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useColors } from "@/hooks/useColors";
+import { FramedWinePhoto } from "@/components/FramedWinePhoto";
 import { Wine, useWines } from "@/contexts/WineContext";
 import {
   getWineAverageRating,
@@ -69,10 +69,14 @@ export function WineCard({ wine, style }: WineCardProps) {
     >
       <View style={styles.photoContainer}>
         {wine.photos[0] ? (
-          <Image
-            source={{ uri: wine.photos[0] }}
+          <FramedWinePhoto
+            uri={wine.photos[0]}
+            framing={{
+              zoom: wine.coverZoom,
+              offsetX: wine.coverOffsetX,
+              offsetY: wine.coverOffsetY,
+            }}
             style={styles.photo}
-            contentFit="cover"
           />
         ) : (
           <View

@@ -148,6 +148,26 @@ export function parseWineText(text: string): Partial<WineFormData> {
   const found = grapes.filter(grape => new RegExp(`\\b${grape}\\b`, "i").test(searchable));
   if (found.length) fields.grapes = found.map(titleCase).join(", ");
 
+  const agingPatterns: Array<[RegExp, string]> = [
+    [/\bgran reserva\b/i, "Gran Reserva"],
+    [/\breserva especial\b/i, "Reserva Especial"],
+    [/\bcrianza biologica\b/i, "Crianza biológica"],
+    [/\bcrianza oxidativa\b/i, "Crianza oxidativa"],
+    [/\bcriaderas? y solera\b|\bsolera\b/i, "Criaderas y solera"],
+    [/\bsobre lias\b/i, "Sobre lías"],
+    [/\breserva\b/i, "Reserva"],
+    [/\bcrianza\b/i, "Crianza"],
+    [/\broble\b|\boak aged\b/i, "Roble"],
+    [/\bjoven\b|\bsin crianza\b/i, "Joven / Sin crianza"],
+  ];
+  const aging = agingPatterns.find(([pattern]) => pattern.test(searchable));
+  if (aging) fields.agingCategory = aging[1];
+
+  const agingMonths = searchable.match(
+    /\b(\d{1,3})\s*meses?(?:\s+de)?(?:\s+(?:crianza|envejecimiento|barrica))?\b|\b(?:aged|ageing)\s+(\d{1,3})\s*months?\b/i,
+  );
+  if (agingMonths) fields.agingMonths = agingMonths[1] || agingMonths[2];
+
   const appellation = APPELLATIONS.find(({ pattern }) => pattern.test(searchable));
   if (appellation) {
     fields.denomination = appellation.denomination;

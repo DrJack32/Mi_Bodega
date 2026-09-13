@@ -88,3 +88,14 @@ s_ucos|n b
 
   assert.equal(fields.denomination, undefined);
 });
+
+test('reconoce categoría y meses de crianza cuando figuran en la etiqueta', () => {
+  const fields = parseWineText(`FINCA ANTIGUA
+RESERVA
+Crianza durante 18 meses en barrica de roble
+Tempranillo
+14% vol`);
+
+  assert.equal(fields.agingCategory, 'Reserva');
+  assert.equal(fields.agingMonths, '18');
+});

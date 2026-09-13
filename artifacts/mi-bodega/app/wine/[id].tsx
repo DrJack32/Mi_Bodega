@@ -1,6 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
-import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
@@ -16,6 +15,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PhotoViewer } from "@/components/PhotoViewer";
+import { FramedWinePhoto } from "@/components/FramedWinePhoto";
 import { useColors } from "@/hooks/useColors";
 import { useWines } from "@/contexts/WineContext";
 import {
@@ -188,10 +188,14 @@ export default function WineDetailScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`Ampliar fotografía ${index + 1}`}
                   >
-                    <Image
-                      source={{ uri }}
+                    <FramedWinePhoto
+                      uri={uri}
+                      framing={{
+                        zoom: index === 0 ? wine.coverZoom : 1,
+                        offsetX: index === 0 ? wine.coverOffsetX : 0,
+                        offsetY: index === 0 ? wine.coverOffsetY : 0,
+                      }}
                       style={StyleSheet.absoluteFill}
-                      contentFit="cover"
                     />
                   </Pressable>
                 ))}
@@ -508,6 +512,8 @@ export default function WineDetailScreen() {
           {(wine.region ||
             wine.denomination ||
             wine.grapes ||
+            wine.agingCategory ||
+            wine.agingMonths ||
             wine.alcohol ||
             wine.volume) && (
             <>
@@ -525,6 +531,11 @@ export default function WineDetailScreen() {
                 <InfoRow label="Región" value={wine.region} />
                 <InfoRow label="Denominación" value={wine.denomination} />
                 <InfoRow label="Variedades" value={wine.grapes} />
+                <InfoRow label="Crianza" value={wine.agingCategory} />
+                <InfoRow
+                  label="Tiempo de crianza"
+                  value={wine.agingMonths ? `${wine.agingMonths} meses` : ""}
+                />
                 <InfoRow label="Graduación" value={wine.alcohol} />
                 <InfoRow label="Volumen" value={wine.volume} />
               </View>

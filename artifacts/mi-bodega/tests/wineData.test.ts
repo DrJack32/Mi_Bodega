@@ -39,6 +39,29 @@ test("normaliza una copia antigua sin descartar el vino", () => {
   assert.equal(wine.tastings.length, 1);
   assert.equal(getWineTastedBottleCount(wine), 1);
   assert.equal(getWineStockCount(wine), 0);
+  assert.equal(wine.agingCategory, "");
+  assert.equal(wine.agingMonths, "");
+  assert.equal(wine.coverZoom, 1);
+  assert.equal(wine.coverOffsetX, 0);
+  assert.equal(wine.coverOffsetY, 0);
+});
+
+test("normaliza el encuadre de portada a valores seguros", () => {
+  const [wine] = normalizeWineRecords([
+    {
+      name: "Etiqueta",
+      photos: ["file:///foto.jpg"],
+      tastings: [],
+      stock: [],
+      coverZoom: 99,
+      coverOffsetX: -4,
+      coverOffsetY: "0.35",
+    },
+  ]);
+
+  assert.equal(wine.coverZoom, 5);
+  assert.equal(wine.coverOffsetX, -1);
+  assert.equal(wine.coverOffsetY, 0.35);
 });
 
 test("mantiene separado el inventario y el historial de botellas", () => {

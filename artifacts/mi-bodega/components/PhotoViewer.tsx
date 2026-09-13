@@ -2,7 +2,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import React, { useEffect } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
-import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import {
+  Gesture,
+  GestureDetector,
+  GestureHandlerRootView,
+} from "react-native-gesture-handler";
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -16,6 +20,8 @@ type PhotoViewerProps = {
   index: number;
   onIndexChange: (index: number) => void;
   onClose: () => void;
+  onUseAsCover?: (index: number) => void;
+  coverIndex?: number;
 };
 
 export function PhotoViewer({
@@ -24,6 +30,8 @@ export function PhotoViewer({
   index,
   onIndexChange,
   onClose,
+  onUseAsCover,
+  coverIndex = 0,
 }: PhotoViewerProps) {
   const insets = useSafeAreaInsets();
   const scale = useSharedValue(1);
@@ -104,6 +112,18 @@ export function PhotoViewer({
     onIndexChange(next);
   };
 
+  const changeZoom = (delta: number) => {
+    const next = Math.max(1, Math.min(5, scale.value + delta));
+    scale.value = withTiming(next);
+    savedScale.value = next;
+    if (next === 1) {
+      translateX.value = withTiming(0);
+      translateY.value = withTiming(0);
+      savedX.value = 0;
+      savedY.value = 0;
+    }
+  };
+
   if (photos.length === 0) return null;
 
   return (
@@ -114,7 +134,7 @@ export function PhotoViewer({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <View style={styles.container}>
+      <GestureHandlerRootView style={styles.container}>
         <GestureDetector gesture={gesture}>
           <Animated.View style={[styles.imageArea, animatedStyle]}>
             <Image
@@ -146,9 +166,24 @@ export function PhotoViewer({
           >
             <Ionicons name="chevron-back" size={26} color="#FFF" />
           </Pressable>
-          <View style={styles.hintWrap}>
-            <Ionicons name="expand-outline" size={17} color="#FFF" />
-            <Text style={styles.hint}>Pellizca o toca dos veces para ampliar</Text>
+          <View style={styles.zoomControls}>
+            <Pressable onPress={() => changeZoom(-0.5)} style={styles.zoomButton}>
+              <Ionicons name="remove" size={22} color="#FFF" />
+            </Pressable>
+            {onUseAsCover ? (
+              <Pressable
+                onPress={() => onUseAsCover(index)}
+                style={[styles.coverButton, index === coverIndex && styles.coverButtonActive]}
+              >
+                <Ionicons name={index === coverIndex ? "star" : "star-outline"} size={15} color="#FFF" />
+                <Text style={styles.coverButtonText}>{index === coverIndex ? "Encuadrar" : "Usar de portada"}</Text>
+              </Pressable>
+            ) : (
+              <Text style={styles.hint}>Pellizca o toca dos veces</Text>
+            )}
+            <Pressable onPress={() => changeZoom(0.5)} style={styles.zoomButton}>
+              <Ionicons name="add" size={22} color="#FFF" />
+            </Pressable>
           </View>
           <Pressable
             onPress={() => changePhoto(index + 1)}
@@ -161,7 +196,7 @@ export function PhotoViewer({
             <Ionicons name="chevron-forward" size={26} color="#FFF" />
           </Pressable>
         </View>
-      </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
@@ -204,6 +239,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   disabled: { opacity: 0.25 },
-  hintWrap: { flexDirection: "row", alignItems: "center", gap: 7, flex: 1, justifyContent: "center" },
+  zoomControls: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1, justifyContent: "center" },
+  zoomButton: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.16)", alignItems: "center", justifyContent: "center" },
+  coverButton: { minHeight: 36, flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.16)" },
+  coverButtonActive: { backgroundColor: "rgba(151,45,72,0.9)" },
+  coverButtonText: { color: "#FFF", fontSize: 11, fontFamily: "Inter_700Bold" },
   hint: { color: "#FFF", fontSize: 11, fontFamily: "Inter_500Medium" },
 });

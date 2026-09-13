@@ -41,8 +41,14 @@ export interface Wine {
   region: string;
   denomination: string;
   grapes: string;
+  agingCategory: string;
+  agingMonths: string;
   alcohol: string;
   volume: string;
+  /** Encuadre no destructivo de la fotografía de portada. */
+  coverZoom: number;
+  coverOffsetX: number;
+  coverOffsetY: number;
   /** Resumen de la cata más reciente. Se conserva para copias antiguas. */
   date: string;
   location: string;
@@ -91,6 +97,8 @@ const STRING_FIELDS = [
   "region",
   "denomination",
   "grapes",
+  "agingCategory",
+  "agingMonths",
   "alcohol",
   "volume",
 ] as const;
@@ -125,6 +133,11 @@ function asRating(value: unknown) {
   return Number.isFinite(rating)
     ? Math.max(0, Math.min(10, Math.round(rating)))
     : 0;
+}
+
+function asCoverNumber(value: unknown, fallback: number, min: number, max: number) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
 }
 
 function uniqueId(value: unknown, usedIds: Set<string>) {
@@ -330,6 +343,9 @@ export function normalizeWineRecord(
     isFavorite: value.isFavorite === true,
     createdAt: asDate(value.createdAt),
     ocrUsed: value.ocrUsed === true,
+    coverZoom: asCoverNumber(value.coverZoom, 1, 1, 5),
+    coverOffsetX: asCoverNumber(value.coverOffsetX, 0, -1, 1),
+    coverOffsetY: asCoverNumber(value.coverOffsetY, 0, -1, 1),
   } as Wine;
 
   for (const field of STRING_FIELDS) {

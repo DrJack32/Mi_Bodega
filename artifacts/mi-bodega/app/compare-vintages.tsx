@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React from "react";
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useWines } from "@/contexts/WineContext";
+import { FramedWinePhoto } from "@/components/FramedWinePhoto";
 import { useColors } from "@/hooks/useColors";
 import {
   getLatestTasting,
@@ -68,7 +68,11 @@ export default function CompareVintagesScreen() {
               >
                 <View style={styles.cardHeader}>
                   {wine.photos[0] ? (
-                    <Image source={{ uri: wine.photos[0] }} style={styles.thumbnail} contentFit="cover" />
+                    <FramedWinePhoto
+                      uri={wine.photos[0]}
+                      framing={{ zoom: wine.coverZoom, offsetX: wine.coverOffsetX, offsetY: wine.coverOffsetY }}
+                      style={styles.thumbnail}
+                    />
                   ) : (
                     <View style={[styles.thumbnail, styles.placeholder, { backgroundColor: colors.secondary }]}>
                       <Ionicons name="wine" size={25} color={colors.primary} />
