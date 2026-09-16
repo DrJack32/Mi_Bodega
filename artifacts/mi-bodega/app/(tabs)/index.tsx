@@ -87,6 +87,7 @@ export default function BibliotecaScreen() {
           w.denomination.toLowerCase().includes(q) ||
           w.grapes.toLowerCase().includes(q) ||
           w.agingCategory.toLowerCase().includes(q) ||
+          w.barcode.includes(q) ||
           w.vintage.includes(q) ||
           w.stock.some((entry) => entry.location.toLowerCase().includes(q)) ||
           w.tastings.some((tasting) =>
@@ -313,7 +314,7 @@ export default function BibliotecaScreen() {
       <Pressable
         onPress={async () => {
           await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          router.push("/add-wine");
+          router.push("/scan");
         }}
         style={[
           styles.fab,

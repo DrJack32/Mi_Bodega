@@ -44,6 +44,8 @@ test("normaliza una copia antigua sin descartar el vino", () => {
   assert.equal(wine.coverZoom, 1);
   assert.equal(wine.coverOffsetX, 0);
   assert.equal(wine.coverOffsetY, 0);
+  assert.equal(wine.barcode, "");
+  assert.equal(wine.dataSource, "");
 });
 
 test("normaliza el encuadre de portada a valores seguros", () => {

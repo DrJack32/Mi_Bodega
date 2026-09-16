@@ -15,6 +15,7 @@ export default function AddWineScreen() {
   const { addWine, updateWine, getWine, storageLocations } = useWines();
   const params = useLocalSearchParams<{
     ocrData?: string;
+    lookupData?: string;
     photoUri?: string;
     editId?: string;
     cloneId?: string;
@@ -49,6 +50,10 @@ export default function AddWineScreen() {
           agingMonths: source.agingMonths,
           alcohol: source.alcohol,
           volume: source.volume,
+          barcode: source.barcode,
+          dataSource: source.dataSource,
+          dataSourceUrl: source.dataSourceUrl,
+          dataFetchedAt: source.dataFetchedAt,
           coverZoom: 1,
           coverOffsetX: 0,
           coverOffsetY: 0,
@@ -67,10 +72,16 @@ export default function AddWineScreen() {
 
     let values: Partial<WineFormData> = {};
 
+    if (params.lookupData) {
+      try {
+        values = JSON.parse(params.lookupData) as Partial<WineFormData>;
+      } catch {}
+    }
+
     if (params.ocrData) {
       try {
         const fields = JSON.parse(params.ocrData) as Partial<WineFormData>;
-        values = { ...fields, ocrUsed: true };
+        values = { ...values, ...fields, ocrUsed: true };
       } catch {}
     }
 
@@ -79,7 +90,7 @@ export default function AddWineScreen() {
     }
 
     setInitialValues(values);
-  }, [getWine, params.cloneId, params.editId, params.ocrData, params.photoUri]);
+  }, [getWine, params.cloneId, params.editId, params.lookupData, params.ocrData, params.photoUri]);
 
   const handleSave = async (data: WineFormData, entry?: InitialWineEntry) => {
     if (params.editId) {

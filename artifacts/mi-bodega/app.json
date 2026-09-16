@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mi Bodega Personal",
     "slug": "mi-bodega",
-    "version": "1.4.0",
+    "version": "1.5.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mi-bodega",
@@ -22,8 +22,9 @@
     },
     "android": {
       "package": "com.drjack32.mibodega",
-      "versionCode": 6,
-      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"]
+      "versionCode": 7,
+      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"],
+      "blockedPermissions": ["android.permission.RECORD_AUDIO"]
     },
     "web": {
       "favicon": "./assets/images/icon.png",
@@ -43,6 +44,13 @@
         {
           "photosPermission": "Mi Bodega accede a tu galería para añadir fotos de tus vinos.",
           "cameraPermission": "Mi Bodega usa la cámara para fotografiar etiquetas de vino."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Mi Bodega usa la cámara para leer códigos de barras de las botellas.",
+          "recordAudioAndroid": false
         }
       ],
       "./plugins/withMlKitOcr",

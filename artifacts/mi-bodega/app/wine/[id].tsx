@@ -515,7 +515,9 @@ export default function WineDetailScreen() {
             wine.agingCategory ||
             wine.agingMonths ||
             wine.alcohol ||
-            wine.volume) && (
+            wine.volume ||
+            wine.barcode ||
+            wine.dataSource) && (
             <>
               <SectionTitle title="Datos del vino" />
               <View
@@ -538,6 +540,8 @@ export default function WineDetailScreen() {
                 />
                 <InfoRow label="Graduación" value={wine.alcohol} />
                 <InfoRow label="Volumen" value={wine.volume} />
+                <InfoRow label="Código de barras" value={wine.barcode} />
+                <InfoRow label="Fuente de datos" value={wine.dataSource} />
               </View>
             </>
           )}

@@ -24,6 +24,7 @@ import {
   WineType,
 } from "@/contexts/WineContext";
 import { callOCR, callOCRForPhotos } from "@/lib/ocr";
+import { normalizeBarcode } from "@/lib/wineLookup";
 
 const WINE_TYPES: { value: WineType; label: string; color: string }[] = [
   { value: "tinto", label: "Tinto", color: "#7B2D3E" },
@@ -62,6 +63,10 @@ const EMPTY_FORM: WineFormData = {
   agingMonths: "",
   alcohol: "",
   volume: "750ml",
+  barcode: "",
+  dataSource: "",
+  dataSourceUrl: "",
+  dataFetchedAt: "",
   coverZoom: 1,
   coverOffsetX: 0,
   coverOffsetY: 0,
@@ -297,6 +302,18 @@ export function WineForm({
       );
       return;
     }
+    let formToSave = form;
+    if (form.barcode.trim()) {
+      try {
+        formToSave = { ...form, barcode: normalizeBarcode(form.barcode) };
+      } catch (error) {
+        Alert.alert(
+          "Código de barras no válido",
+          error instanceof Error ? error.message : "Revisa el código.",
+        );
+        return;
+      }
+    }
     if (!isEditing && !entryMode) {
       Alert.alert(
         "Elige el destino",
@@ -332,7 +349,7 @@ export function WineForm({
               price: cellarPrice.trim(),
             }
           : { kind: "tasted" };
-      await onSave(form, entry);
+      await onSave(formToSave, entry);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
       const message =
@@ -428,6 +445,21 @@ export function WineForm({
             <Ionicons name="checkmark-circle" size={20} color="#27AE60" />
             <Text style={styles.ocrSuccessText}>
               ¡Información extraída! Revisa y completa los campos.
+            </Text>
+          </View>
+        )}
+
+        {form.dataSource && (
+          <View
+            style={[
+              styles.lookupSuccessBanner,
+              { borderRadius: colors.radius / 1.5 },
+            ]}
+          >
+            <Ionicons name="cloud-done-outline" size={20} color="#245D96" />
+            <Text style={styles.lookupSuccessText}>
+              Datos encontrados en {form.dataSource}. Revísalos: la añada y la
+              crianza pueden cambiar entre botellas y deben comprobarse en la etiqueta.
             </Text>
           </View>
         )}
@@ -645,6 +677,17 @@ export function WineForm({
           onChangeText={(v) => set("winery", v)}
           placeholder="Ej: Bodegas Vega Sicilia"
           placeholderTextColor={colors.mutedForeground}
+        />
+
+        <FieldLabel label="Código de barras" optional />
+        <TextInput
+          style={inputStyle}
+          value={form.barcode}
+          onChangeText={(v) => set("barcode", v.replace(/\D/g, ""))}
+          placeholder="EAN / UPC"
+          placeholderTextColor={colors.mutedForeground}
+          keyboardType="number-pad"
+          maxLength={14}
         />
 
         <View style={styles.row}>
@@ -1254,6 +1297,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: "Inter_500Medium",
     color: "#1D7A3A",
+    lineHeight: 18,
+  },
+  lookupSuccessBanner: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    padding: 12,
+    backgroundColor: "#EAF2FA",
+    borderWidth: 1,
+    borderColor: "#AFC9E2",
+  },
+  lookupSuccessText: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_500Medium",
+    color: "#245D96",
     lineHeight: 18,
   },
   sectionHeader: {

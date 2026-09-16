@@ -45,6 +45,11 @@ export interface Wine {
   agingMonths: string;
   alcohol: string;
   volume: string;
+  /** Identificación externa opcional. Las consultas nunca incluyen la colección personal. */
+  barcode: string;
+  dataSource: string;
+  dataSourceUrl: string;
+  dataFetchedAt: string;
   /** Encuadre no destructivo de la fotografía de portada. */
   coverZoom: number;
   coverOffsetX: number;
@@ -101,6 +106,10 @@ const STRING_FIELDS = [
   "agingMonths",
   "alcohol",
   "volume",
+  "barcode",
+  "dataSource",
+  "dataSourceUrl",
+  "dataFetchedAt",
 ] as const;
 
 function createId() {
