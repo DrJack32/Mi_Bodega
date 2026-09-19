@@ -39,6 +39,10 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v4
+        with:
+          # El paquete heredado `tools` ya no existe en los repositorios nuevos.
+          # Los componentes necesarios se instalan explícitamente en el paso siguiente.
+          packages: ''
 
       - name: Install Android SDK components (NDK, CMake, platform)
         run: |
