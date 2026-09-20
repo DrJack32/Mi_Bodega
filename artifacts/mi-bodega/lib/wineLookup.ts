@@ -275,7 +275,7 @@ export async function lookupOpenFoodFacts(
     const response = await fetcher(endpoint, {
       headers: {
         Accept: "application/json",
-        "User-Agent": "MiBodega/1.5.1 (github.com/DrJack32/Mi_Bodega)",
+        "User-Agent": "MiBodega/1.6.0 (github.com/DrJack32/Mi_Bodega)",
       },
       signal: controller.signal,
     });

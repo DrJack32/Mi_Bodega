@@ -496,12 +496,21 @@ export default function WineDetailScreen() {
           {vintageFamily.length > 1 && (
             <Pressable
               onPress={() =>
-                router.push({ pathname: "/compare-vintages", params: { id: wine.id } })
+                router.push({
+                  pathname: "/compare-vintages",
+                  params: { id: wine.id },
+                })
               }
               style={styles.vintageAction}
             >
-              <Ionicons name="git-compare-outline" size={17} color={colors.primary} />
-              <Text style={[styles.vintageActionText, { color: colors.primary }]}>
+              <Ionicons
+                name="git-compare-outline"
+                size={17}
+                color={colors.primary}
+              />
+              <Text
+                style={[styles.vintageActionText, { color: colors.primary }]}
+              >
                 Comparar las {vintageFamily.length} añadas
               </Text>
             </Pressable>
@@ -584,23 +593,109 @@ export default function WineDetailScreen() {
                           {entry.price ? ` · ${entry.price} € / botella` : ""}
                         </Text>
                       </View>
-                      <Pressable
-                        onPress={() =>
-                          router.push({
-                            pathname: "/add-tasting",
-                            params: { wineId: wine.id, stockEntryId: entry.id },
-                          })
-                        }
-                        style={[
-                          styles.drinkButton,
-                          { backgroundColor: colors.primary },
-                        ]}
-                      >
-                        <Ionicons name="wine" size={16} color="#FFF" />
-                        <Text style={styles.drinkButtonText}>Beber</Text>
-                      </Pressable>
+                      <View style={styles.stockActions}>
+                        <Pressable
+                          onPress={() =>
+                            router.push({
+                              pathname: "/add-tasting",
+                              params: {
+                                wineId: wine.id,
+                                stockEntryId: entry.id,
+                              },
+                            })
+                          }
+                          style={[
+                            styles.stockButton,
+                            { backgroundColor: colors.primary },
+                          ]}
+                        >
+                          <Ionicons name="wine" size={15} color="#FFF" />
+                          <Text style={styles.drinkButtonText}>Beber</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() =>
+                            router.push({
+                              pathname: "/move-stock",
+                              params: {
+                                wineId: wine.id,
+                                stockEntryId: entry.id,
+                              },
+                            })
+                          }
+                          style={[
+                            styles.stockButton,
+                            { borderColor: colors.primary, borderWidth: 1 },
+                          ]}
+                        >
+                          <Ionicons
+                            name="swap-horizontal"
+                            size={15}
+                            color={colors.primary}
+                          />
+                          <Text
+                            style={[
+                              styles.moveButtonText,
+                              { color: colors.primary },
+                            ]}
+                          >
+                            Mover
+                          </Text>
+                        </Pressable>
+                      </View>
                     </View>
                   ))}
+              </View>
+            </>
+          )}
+
+          {wine.stockMovements.length > 0 && (
+            <>
+              <SectionTitle title="Movimientos de bodega" />
+              <View style={styles.historyList}>
+                {wine.stockMovements.slice(0, 10).map((movement) => (
+                  <View
+                    key={movement.id}
+                    style={[
+                      styles.movementCard,
+                      {
+                        backgroundColor: colors.card,
+                        borderColor: colors.border,
+                        borderRadius: colors.radius,
+                      },
+                    ]}
+                  >
+                    <Ionicons
+                      name="swap-horizontal"
+                      size={18}
+                      color={colors.primary}
+                    />
+                    <View style={styles.movementInfo}>
+                      <Text
+                        style={[
+                          styles.movementRoute,
+                          { color: colors.foreground },
+                        ]}
+                      >
+                        {movement.fromLocation || "Sin ubicación"} →{" "}
+                        {movement.toLocation}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.stockMeta,
+                          { color: colors.mutedForeground },
+                        ]}
+                      >
+                        {movement.quantity}{" "}
+                        {movement.quantity === 1 ? "botella" : "botellas"} ·{" "}
+                        {new Intl.DateTimeFormat("es-ES", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                        }).format(new Date(movement.movedAt))}
+                      </Text>
+                    </View>
+                  </View>
+                ))}
               </View>
             </>
           )}
@@ -813,7 +908,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 15,
   },
-  expandHintText: { color: "#FFF", fontSize: 11, fontFamily: "Inter_600SemiBold" },
+  expandHintText: {
+    color: "#FFF",
+    fontSize: 11,
+    fontFamily: "Inter_600SemiBold",
+  },
   heroOverlay: {
     position: "absolute",
     top: 0,
@@ -954,15 +1053,27 @@ const styles = StyleSheet.create({
   stockInfo: { flex: 1 },
   stockLocation: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   stockMeta: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 3 },
-  drinkButton: {
+  stockActions: { gap: 7 },
+  stockButton: {
     minHeight: 38,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 5,
     paddingHorizontal: 12,
     borderRadius: 19,
   },
   drinkButtonText: { color: "#FFF", fontSize: 12, fontFamily: "Inter_700Bold" },
+  moveButtonText: { fontSize: 12, fontFamily: "Inter_700Bold" },
+  movementCard: {
+    borderWidth: 1,
+    padding: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  movementInfo: { flex: 1 },
+  movementRoute: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   tastingCard: { borderWidth: 1, padding: 14, gap: 9 },
   tastingHeader: { flexDirection: "row", alignItems: "center", gap: 9 },
   tastingNumber: { paddingHorizontal: 8, paddingVertical: 5, borderRadius: 14 },

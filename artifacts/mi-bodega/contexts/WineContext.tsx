@@ -33,6 +33,7 @@ import {
 import {
   createStock,
   createTasting,
+  moveWineStock,
   normalizeStorageLocations,
   normalizeWineRecords,
   syncWineSummary,
@@ -42,6 +43,7 @@ import {
   type Wine,
   type WineFormData,
   type WineStock,
+  type WineStockMovement,
   type WineTasting,
   type WineType,
 } from "@/lib/wineData";
@@ -56,6 +58,7 @@ export type {
   Wine,
   WineFormData,
   WineStock,
+  WineStockMovement,
   WineTasting,
   WineType,
 };
@@ -83,9 +86,17 @@ interface WineContextValue {
     stockEntryId?: string,
   ) => Promise<void>;
   addStock: (wineId: string, data: StockFormData) => Promise<void>;
+  moveStock: (
+    wineId: string,
+    stockEntryId: string,
+    destination: string,
+    quantity: number,
+  ) => Promise<void>;
   addStorageLocation: (location: string) => Promise<void>;
   removeStorageLocation: (location: string) => Promise<void>;
-  setBackupReminderInterval: (interval: BackupReminderInterval) => Promise<void>;
+  setBackupReminderInterval: (
+    interval: BackupReminderInterval,
+  ) => Promise<void>;
   snoozeBackupReminder: () => Promise<void>;
   createBackup: () => ReturnType<typeof createBackupArchive>;
   inspectBackup: (uri: string, name: string) => Promise<BackupPreview>;
@@ -300,7 +311,10 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
     };
     backupReminderRef.current = reminder;
     setBackupReminder(reminder);
-    void AsyncStorage.setItem(BACKUP_REMINDER_KEY, JSON.stringify(reminder)).catch(() => {});
+    void AsyncStorage.setItem(
+      BACKUP_REMINDER_KEY,
+      JSON.stringify(reminder),
+    ).catch(() => {});
     return result;
   }, []);
 
@@ -390,6 +404,7 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
           createdAt: new Date().toISOString(),
           tastings: tasting ? [tasting] : [],
           stock: stock ? [stock] : [],
+          stockMovements: [],
         });
         const locations =
           stock && stock.location
@@ -518,6 +533,31 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
     [commit, runMutation],
   );
 
+  const moveStock = useCallback(
+    (
+      wineId: string,
+      stockEntryId: string,
+      destination: string,
+      quantity: number,
+    ) =>
+      runMutation(async (current) => {
+        const target = current.wines.find((wine) => wine.id === wineId);
+        if (!target) throw new Error("El vino ya no existe.");
+        const moved = moveWineStock(
+          target,
+          stockEntryId,
+          destination,
+          quantity,
+        );
+        const updated = current.wines.map((wine) =>
+          wine.id === wineId ? moved : wine,
+        );
+        const locations = withLocation(current.storageLocations, destination);
+        await commit({ wines: updated, storageLocations: locations });
+      }),
+    [commit, runMutation],
+  );
+
   const addStorageLocation = useCallback(
     (location: string) =>
       runMutation(async (current) => {
@@ -574,7 +614,10 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         storageWarning,
         backupReminder,
-        backupReminderDue: isBackupReminderDue(backupReminder, wines.length > 0),
+        backupReminderDue: isBackupReminderDue(
+          backupReminder,
+          wines.length > 0,
+        ),
         addWine,
         updateWine,
         deleteWine,
@@ -582,6 +625,7 @@ export function WineProvider({ children }: { children: React.ReactNode }) {
         getWine,
         addTasting,
         addStock,
+        moveStock,
         addStorageLocation,
         removeStorageLocation,
         setBackupReminderInterval,

@@ -30,6 +30,14 @@ export interface WineStock {
   addedAt: string;
 }
 
+export interface WineStockMovement {
+  id: string;
+  fromLocation: string;
+  toLocation: string;
+  quantity: number;
+  movedAt: string;
+}
+
 export interface Wine {
   id: string;
   photos: string[];
@@ -63,6 +71,7 @@ export interface Wine {
   notes: string;
   tastings: WineTasting[];
   stock: WineStock[];
+  stockMovements: WineStockMovement[];
   isFavorite: boolean;
   createdAt: string;
   ocrUsed: boolean;
@@ -70,7 +79,7 @@ export interface Wine {
 
 export type WineFormData = Omit<
   Wine,
-  "id" | "createdAt" | "tastings" | "stock"
+  "id" | "createdAt" | "tastings" | "stock" | "stockMovements"
 >;
 
 export type TastingFormData = Omit<WineTasting, "id" | "createdAt">;
@@ -144,9 +153,16 @@ function asRating(value: unknown) {
     : 0;
 }
 
-function asCoverNumber(value: unknown, fallback: number, min: number, max: number) {
+function asCoverNumber(
+  value: unknown,
+  fallback: number,
+  min: number,
+  max: number,
+) {
   const number = Number(value);
-  return Number.isFinite(number) ? Math.max(min, Math.min(max, number)) : fallback;
+  return Number.isFinite(number)
+    ? Math.max(min, Math.min(max, number))
+    : fallback;
 }
 
 function uniqueId(value: unknown, usedIds: Set<string>) {
@@ -232,6 +248,86 @@ function normalizeStock(value: unknown, usedIds: Set<string>): WineStock {
   };
 }
 
+function normalizeStockMovement(
+  value: unknown,
+  usedIds: Set<string>,
+): WineStockMovement {
+  if (!isRecord(value)) {
+    throw new Error("La copia contiene un movimiento de bodega no valido.");
+  }
+  return {
+    id: uniqueId(value.id, usedIds),
+    fromLocation: asString(value.fromLocation).trim(),
+    toLocation: asString(value.toLocation).trim(),
+    quantity: asQuantity(value.quantity, 1) || 1,
+    movedAt: asDate(value.movedAt),
+  };
+}
+
+function locationKey(value: string) {
+  return value.trim().toLocaleLowerCase("es");
+}
+
+export function moveWineStock(
+  wine: Wine,
+  stockEntryId: string,
+  destination: string,
+  quantity: number,
+): Wine {
+  const targetLocation = destination.trim();
+  const source = wine.stock.find((entry) => entry.id === stockEntryId);
+  if (!source) throw new Error("Ese lote ya no existe.");
+  if (!targetLocation) throw new Error("Indica la nueva ubicación.");
+  if (locationKey(source.location) === locationKey(targetLocation)) {
+    throw new Error("Elige una ubicación distinta de la actual.");
+  }
+  if (!Number.isSafeInteger(quantity) || quantity < 1) {
+    throw new Error("Indica al menos una botella.");
+  }
+  if (quantity > source.quantity) {
+    throw new Error(`En ${source.location} solo quedan ${source.quantity}.`);
+  }
+
+  // Repartimos también la cantidad comprada para que un traslado no cuente
+  // como una compra nueva en las estadísticas, incluso tras restaurar copia.
+  const transferredPurchased = Math.min(quantity, source.purchasedQuantity);
+  const stock = wine.stock.map((entry) =>
+    entry.id === stockEntryId
+      ? {
+          ...entry,
+          quantity: entry.quantity - quantity,
+          purchasedQuantity: entry.purchasedQuantity - transferredPurchased,
+        }
+      : entry,
+  );
+  const movedAt = new Date().toISOString();
+
+  return {
+    ...wine,
+    stock: [
+      {
+        id: createId(),
+        location: targetLocation,
+        quantity,
+        purchasedQuantity: transferredPurchased,
+        price: source.price,
+        addedAt: source.addedAt,
+      },
+      ...stock,
+    ],
+    stockMovements: [
+      {
+        id: createId(),
+        fromLocation: source.location,
+        toLocation: targetLocation,
+        quantity,
+        movedAt,
+      },
+      ...wine.stockMovements,
+    ],
+  };
+}
+
 export function getLatestTasting(wine: Pick<Wine, "tastings">) {
   return wine.tastings[0];
 }
@@ -261,7 +357,10 @@ function normalizeWineIdentity(value: string) {
     .trim();
 }
 
-export function areSameWineFamily(a: Pick<Wine, "name" | "winery">, b: Pick<Wine, "name" | "winery">) {
+export function areSameWineFamily(
+  a: Pick<Wine, "name" | "winery">,
+  b: Pick<Wine, "name" | "winery">,
+) {
   const aName = normalizeWineIdentity(a.name);
   const bName = normalizeWineIdentity(b.name);
   if (!aName || aName !== bName) return false;
@@ -307,8 +406,10 @@ export function normalizeWineRecord(
     : "otro";
   const tastingIds = new Set<string>();
   const stockIds = new Set<string>();
+  const stockMovementIds = new Set<string>();
   const rawTastings = value.tastings;
   const rawStock = value.stock;
+  const rawStockMovements = value.stockMovements;
   const hasTastingHistory = Array.isArray(rawTastings);
   const tastings = hasTastingHistory
     ? rawTastings.map((item) => normalizeTasting(item, tastingIds))
@@ -331,6 +432,11 @@ export function normalizeWineRecord(
   const stock = Array.isArray(rawStock)
     ? rawStock.map((item) => normalizeStock(item, stockIds))
     : [];
+  const stockMovements = Array.isArray(rawStockMovements)
+    ? rawStockMovements.map((item) =>
+        normalizeStockMovement(item, stockMovementIds),
+      )
+    : [];
 
   const wine = {
     id,
@@ -343,6 +449,7 @@ export function normalizeWineRecord(
     type,
     tastings,
     stock,
+    stockMovements,
     date: "",
     location: "",
     price: "",

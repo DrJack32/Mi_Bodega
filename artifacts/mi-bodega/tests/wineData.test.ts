@@ -6,6 +6,7 @@ import {
   getWineStockCount,
   getWineTastedBottleCount,
   getWineVintageFamily,
+  moveWineStock,
   normalizePriceNumber,
   normalizeStorageLocations,
   normalizeWineRecords,
@@ -46,6 +47,7 @@ test("normaliza una copia antigua sin descartar el vino", () => {
   assert.equal(wine.coverOffsetY, 0);
   assert.equal(wine.barcode, "");
   assert.equal(wine.dataSource, "");
+  assert.deepEqual(wine.stockMovements, []);
 });
 
 test("normaliza el encuadre de portada a valores seguros", () => {
@@ -128,6 +130,76 @@ test("un vino guardado sin cata no se convierte en consumido", () => {
   assert.equal(wine.date, "");
 });
 
+test("mueve parte de un lote sin duplicar compras y guarda el movimiento", () => {
+  const [wine] = normalizeWineRecords([
+    {
+      id: "wine-1",
+      name: "Reserva",
+      type: "tinto",
+      photos: [],
+      tastings: [],
+      stock: [
+        {
+          id: "stock-1",
+          location: "Botellero principal",
+          quantity: 4,
+          purchasedQuantity: 6,
+          price: "15,50",
+          addedAt: "2026-09-13T10:00:00.000Z",
+        },
+      ],
+    },
+  ]);
+
+  const moved = moveWineStock(wine, "stock-1", "Nevera de vinos", 2);
+
+  assert.equal(getWineStockCount(moved), 4);
+  assert.equal(
+    moved.stock.reduce((sum, entry) => sum + entry.purchasedQuantity, 0),
+    6,
+  );
+  assert.equal(moved.stock[0].location, "Nevera de vinos");
+  assert.equal(moved.stock[0].quantity, 2);
+  assert.equal(moved.stock[1].location, "Botellero principal");
+  assert.equal(moved.stock[1].quantity, 2);
+  assert.deepEqual(
+    {
+      from: moved.stockMovements[0].fromLocation,
+      to: moved.stockMovements[0].toLocation,
+      quantity: moved.stockMovements[0].quantity,
+    },
+    { from: "Botellero principal", to: "Nevera de vinos", quantity: 2 },
+  );
+
+  const [restored] = normalizeWineRecords([moved]);
+  assert.equal(
+    restored.stock.reduce((sum, entry) => sum + entry.purchasedQuantity, 0),
+    6,
+  );
+  assert.equal(restored.stockMovements.length, 1);
+});
+
+test("rechaza traslados imposibles o a la misma ubicación", () => {
+  const [wine] = normalizeWineRecords([
+    {
+      name: "Crianza",
+      type: "tinto",
+      photos: [],
+      tastings: [],
+      stock: [{ id: "stock-1", location: "Nevera", quantity: 2 }],
+    },
+  ]);
+
+  assert.throws(
+    () => moveWineStock(wine, "stock-1", " nevera ", 1),
+    /distinta/,
+  );
+  assert.throws(
+    () => moveWineStock(wine, "stock-1", "Botellero", 3),
+    /solo quedan 2/,
+  );
+});
+
 test("normaliza ubicaciones preparadas sin duplicados", () => {
   assert.deepEqual(
     normalizeStorageLocations([
@@ -147,10 +219,37 @@ test("rechaza estructuras que no son una coleccion de vinos", () => {
 
 test("agrupa las añadas del mismo vino aunque cambien mayúsculas o acentos", () => {
   const wines = normalizeWineRecords([
-    { id: "2024", name: "Alceño", winery: "Bodegas Alceño", vintage: "2024", photos: [], tastings: [], stock: [] },
-    { id: "2022", name: "ALCENO", winery: "Alceño S.A.", vintage: "2022", photos: [], tastings: [], stock: [] },
-    { id: "other", name: "Otro vino", winery: "Bodegas Alceño", vintage: "2023", photos: [], tastings: [], stock: [] },
+    {
+      id: "2024",
+      name: "Alceño",
+      winery: "Bodegas Alceño",
+      vintage: "2024",
+      photos: [],
+      tastings: [],
+      stock: [],
+    },
+    {
+      id: "2022",
+      name: "ALCENO",
+      winery: "Alceño S.A.",
+      vintage: "2022",
+      photos: [],
+      tastings: [],
+      stock: [],
+    },
+    {
+      id: "other",
+      name: "Otro vino",
+      winery: "Bodegas Alceño",
+      vintage: "2023",
+      photos: [],
+      tastings: [],
+      stock: [],
+    },
   ]);
 
-  assert.deepEqual(getWineVintageFamily(wines, wines[0]).map((wine) => wine.id), ["2024", "2022"]);
+  assert.deepEqual(
+    getWineVintageFamily(wines, wines[0]).map((wine) => wine.id),
+    ["2024", "2022"],
+  );
 });
