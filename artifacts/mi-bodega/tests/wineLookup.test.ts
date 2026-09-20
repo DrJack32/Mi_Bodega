@@ -3,9 +3,11 @@ import test from "node:test";
 
 import {
   fieldsFromOpenFoodFactsProduct,
+  fieldsFromUpcItemDbItem,
   hasValidGtinChecksum,
   lookupFromLocalWine,
   lookupOpenFoodFacts,
+  lookupWineByBarcode,
   normalizeBarcode,
 } from "../lib/wineLookup";
 import { normalizeWineRecord } from "../lib/wineData";
@@ -82,4 +84,46 @@ test("reutiliza una ficha local sin copiar su añada", () => {
   assert.equal(result.localWineId, "local-1");
   assert.equal(result.fields.name, "Alceño Cepas Viejas");
   assert.equal(result.fields.vintage, undefined);
+});
+
+test("convierte la segunda base EAN sin inventar la añada", () => {
+  const fields = fieldsFromUpcItemDbItem({
+    title: "Alceño Cepas Viejas Monastrell",
+    brand: "Bodegas Alceño",
+    description: "Vino tinto DOP Jumilla, Murcia. 14,5% vol",
+    category: "Red wine",
+    size: "750 ml",
+  });
+
+  assert.equal(fields.name, "Alceño Cepas Viejas Monastrell");
+  assert.equal(fields.winery, "Bodegas Alceño");
+  assert.equal(fields.type, "tinto");
+  assert.equal(fields.denomination, "DOP Jumilla");
+  assert.equal(fields.grapes, "Monastrell");
+  assert.equal(fields.volume, "750ml");
+  assert.equal(fields.vintage, undefined);
+});
+
+test("prueba UPCitemdb cuando Open Food Facts no conoce el EAN", async () => {
+  const requested: string[] = [];
+  const result = await lookupWineByBarcode("8410036002015", async (input) => {
+    const url = String(input);
+    requested.push(url);
+    if (url.includes("openfoodfacts")) {
+      return new Response(JSON.stringify({ status: "failure" }), { status: 200 });
+    }
+    return new Response(
+      JSON.stringify({
+        code: "OK",
+        total: 1,
+        items: [{ title: "Vino encontrado", brand: "Bodega de prueba", size: "75 cl" }],
+      }),
+      { status: 200 },
+    );
+  });
+
+  assert.equal(requested.length, 2);
+  assert.equal(result?.source, "UPCitemdb");
+  assert.equal(result?.fields.name, "Vino encontrado");
+  assert.equal(result?.fields.volume, "750ml");
 });

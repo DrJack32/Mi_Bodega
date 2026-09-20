@@ -20,7 +20,7 @@ export type LookupFieldKey = (typeof LOOKUP_FIELD_KEYS)[number];
 export type WineLookupResult = {
   barcode: string;
   fields: Partial<WineFormData>;
-  source: "Open Food Facts" | "Mi Bodega";
+  source: "Open Food Facts" | "UPCitemdb" | "Mi Bodega";
   sourceUrl: string;
   fetchedAt: string;
   localWineId?: string;
@@ -48,6 +48,20 @@ type OpenFoodFactsResponse = {
   code?: unknown;
   product?: unknown;
   status?: unknown;
+};
+
+type UpcItemDbItem = {
+  title?: unknown;
+  brand?: unknown;
+  description?: unknown;
+  category?: unknown;
+  size?: unknown;
+};
+
+type UpcItemDbResponse = {
+  code?: unknown;
+  total?: unknown;
+  items?: unknown;
 };
 
 const PRODUCT_FIELDS = [
@@ -199,6 +213,41 @@ export function fieldsFromOpenFoodFactsProduct(
   ) as Partial<WineFormData>;
 }
 
+export function fieldsFromUpcItemDbItem(
+  item: UpcItemDbItem,
+): Partial<WineFormData> {
+  const name = text(item.title);
+  const winery = text(item.brand);
+  const description = [
+    name,
+    winery,
+    text(item.description),
+    text(item.category),
+    text(item.size),
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const inferred = parseWineText(description);
+
+  const fields: Partial<WineFormData> = {
+    name,
+    winery,
+    type: inferred.type,
+    country: inferred.country,
+    region: inferred.region,
+    denomination: inferred.denomination,
+    grapes: inferred.grapes,
+    agingCategory: inferred.agingCategory,
+    agingMonths: inferred.agingMonths,
+    alcohol: inferred.alcohol,
+    volume: inferred.volume || normalizedVolume(item.size),
+  };
+
+  return Object.fromEntries(
+    Object.entries(fields).filter(([, value]) => value !== undefined && value !== ""),
+  ) as Partial<WineFormData>;
+}
+
 export function lookupFromLocalWine(wine: Wine, barcode: string): WineLookupResult {
   const fields = Object.fromEntries(
     LOOKUP_FIELD_KEYS.map((key) => [key, wine[key]]).filter(([, value]) => value !== ""),
@@ -226,7 +275,7 @@ export async function lookupOpenFoodFacts(
     const response = await fetcher(endpoint, {
       headers: {
         Accept: "application/json",
-        "User-Agent": "MiBodega/1.5.0 (github.com/DrJack32/Mi_Bodega)",
+        "User-Agent": "MiBodega/1.5.1 (github.com/DrJack32/Mi_Bodega)",
       },
       signal: controller.signal,
     });
@@ -238,9 +287,12 @@ export async function lookupOpenFoodFacts(
     const product = asRecord(payload.product) as OpenFoodFactsProduct | null;
     if (!product || payload.status === "failure" || payload.status === 0) return null;
 
+    const fields = fieldsFromOpenFoodFactsProduct(product);
+    if (Object.keys(fields).length === 0) return null;
+
     return {
       barcode,
-      fields: fieldsFromOpenFoodFactsProduct(product),
+      fields,
       source: "Open Food Facts",
       sourceUrl: `https://world.openfoodfacts.org/product/${barcode}`,
       fetchedAt: new Date().toISOString(),
@@ -253,4 +305,81 @@ export async function lookupOpenFoodFacts(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function lookupUpcItemDb(
+  rawBarcode: string,
+  fetcher: typeof fetch = fetch,
+): Promise<WineLookupResult | null> {
+  const barcode = normalizeBarcode(rawBarcode);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12_000);
+
+  try {
+    const response = await fetcher(
+      `https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`,
+      { headers: { Accept: "application/json" }, signal: controller.signal },
+    );
+    // La modalidad gratuita puede agotar temporalmente sus 100 consultas diarias.
+    // No debe impedir que la app continúe con OCR o entrada manual.
+    if (response.status === 404 || response.status === 429) return null;
+    if (!response.ok) {
+      throw new Error(`La segunda base de datos respondió con el error ${response.status}.`);
+    }
+    const payload = (await response.json()) as UpcItemDbResponse;
+    const items = Array.isArray(payload.items) ? payload.items : [];
+    const item = asRecord(items[0]) as UpcItemDbItem | null;
+    if (!item || payload.code === "INVALID_UPC" || payload.code === "NOT_FOUND") return null;
+
+    const fields = fieldsFromUpcItemDbItem(item);
+    if (Object.keys(fields).length === 0) return null;
+
+    return {
+      barcode,
+      fields,
+      source: "UPCitemdb",
+      sourceUrl: `https://www.upcitemdb.com/upc/${barcode}`,
+      fetchedAt: new Date().toISOString(),
+    };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error("La segunda consulta ha tardado demasiado.");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+/** Consulta fuentes independientes; una caída no anula el resultado de la otra. */
+export async function lookupWineByBarcode(
+  rawBarcode: string,
+  fetcher: typeof fetch = fetch,
+): Promise<WineLookupResult | null> {
+  const barcode = normalizeBarcode(rawBarcode);
+  let reachableSources = 0;
+  let lastError: unknown;
+
+  try {
+    const result = await lookupOpenFoodFacts(barcode, fetcher);
+    reachableSources += 1;
+    if (result) return result;
+  } catch (error) {
+    lastError = error;
+  }
+
+  try {
+    const result = await lookupUpcItemDb(barcode, fetcher);
+    reachableSources += 1;
+    if (result) return result;
+  } catch (error) {
+    lastError = error;
+  }
+
+  if (reachableSources === 0) {
+    throw lastError instanceof Error
+      ? lastError
+      : new Error("No se pudo conectar con las bases de datos.");
+  }
+  return null;
 }

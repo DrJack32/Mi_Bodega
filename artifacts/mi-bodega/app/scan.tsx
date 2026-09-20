@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useWines } from "@/contexts/WineContext";
 import { useColors } from "@/hooks/useColors";
 import { callOCR } from "@/lib/ocr";
-import { LOOKUP_FIELD_KEYS, type LookupFieldKey, type WineLookupResult, lookupFromLocalWine, lookupOpenFoodFacts, normalizeBarcode } from "@/lib/wineLookup";
+import { LOOKUP_FIELD_KEYS, type LookupFieldKey, type WineLookupResult, lookupFromLocalWine, lookupWineByBarcode, normalizeBarcode } from "@/lib/wineLookup";
 
 const FIELD_LABELS: Record<LookupFieldKey, string> = {
   name: "Nombre", winery: "Bodega", type: "Tipo", country: "País", region: "Región",
@@ -41,7 +41,7 @@ export default function ScanScreen() {
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 34 : insets.bottom;
 
-  const processImage = async (uri: string) => {
+  const processImage = async (uri: string, barcode = "") => {
     setIsProcessing(true);
     setStatus("Analizando etiqueta...");
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -50,7 +50,14 @@ export default function ScanScreen() {
       const hasData = Object.keys(fields).length > 0;
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       if (!hasData) Alert.alert("Poco texto detectado", "No he podido reconocer datos claros de la etiqueta. Aun así puedes guardar la foto y completar el vino manualmente.");
-      router.replace({ pathname: "/add-wine", params: { ocrData: JSON.stringify(fields), photoUri: uri } });
+      router.replace({
+        pathname: "/add-wine",
+        params: {
+          ocrData: JSON.stringify(fields),
+          photoUri: uri,
+          ...(barcode ? { lookupData: JSON.stringify({ barcode }) } : {}),
+        },
+      });
     } catch (error) {
       setIsProcessing(false);
       setStatus("");
@@ -59,17 +66,17 @@ export default function ScanScreen() {
     }
   };
 
-  const pickFromCamera = async () => {
+  const pickFromCamera = async (barcode = "") => {
     try {
       const image = await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.9, allowsEditing: false, exif: false });
-      if (!image.canceled && image.assets[0]) await processImage(image.assets[0].uri);
+      if (!image.canceled && image.assets[0]) await processImage(image.assets[0].uri, barcode);
     } catch { Alert.alert("Error", "No se pudo acceder a la cámara."); }
   };
 
-  const pickFromGallery = async () => {
+  const pickFromGallery = async (barcode = "") => {
     try {
       const image = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.9, allowsEditing: false, exif: false });
-      if (!image.canceled && image.assets[0]) await processImage(image.assets[0].uri);
+      if (!image.canceled && image.assets[0]) await processImage(image.assets[0].uri, barcode);
     } catch { Alert.alert("Error", "No se pudo acceder a la galería."); }
   };
 
@@ -77,6 +84,14 @@ export default function ScanScreen() {
     setMode("barcode");
     setResult(null);
     if (!permission?.granted) await requestPermission();
+  };
+
+  const chooseLabelPhoto = (barcode: string) => {
+    Alert.alert("Leer la etiqueta", "Elige cómo añadir la fotografía que analizará el lector local.", [
+      { text: "Cámara", onPress: () => void pickFromCamera(barcode) },
+      { text: "Galería", onPress: () => void pickFromGallery(barcode) },
+      { text: "Cancelar", style: "cancel" },
+    ]);
   };
 
   const useBarcode = async (rawBarcode: string) => {
@@ -93,15 +108,22 @@ export default function ScanScreen() {
     setStatus("Buscando el vino...");
     try {
       const localWine = wines.find((wine) => wine.barcode === barcode);
-      const found = localWine ? lookupFromLocalWine(localWine, barcode) : await lookupOpenFoodFacts(barcode);
+      const found = localWine ? lookupFromLocalWine(localWine, barcode) : await lookupWineByBarcode(barcode);
       if (!found) {
-        lookupLock.current = false;
         setIsProcessing(false);
         setStatus("");
-        Alert.alert("Vino no encontrado", "El código no figura en la base de datos abierta. Puedes conservarlo y completar la ficha con la etiqueta.", [
-          { text: "Volver a escanear", style: "cancel" },
-          { text: "Crear ficha", onPress: () => router.replace({ pathname: "/add-wine", params: { lookupData: JSON.stringify({ barcode }) } }) },
-        ]);
+        setManualBarcode(barcode);
+        const unlockScanner = () => { lookupLock.current = false; };
+        Alert.alert(
+          "Vino no encontrado",
+          `Código leído: ${barcode}\n\nNo figura en ninguna de las dos bases consultadas. Podemos conservar el código y leer ahora la etiqueta.`,
+          [
+            { text: "Leer etiqueta", onPress: () => { unlockScanner(); chooseLabelPhoto(barcode); } },
+            { text: "Crear ficha", onPress: () => router.replace({ pathname: "/add-wine", params: { lookupData: JSON.stringify({ barcode }) } }) },
+            { text: "Cancelar", style: "cancel", onPress: unlockScanner },
+          ],
+          { cancelable: true, onDismiss: unlockScanner },
+        );
         return;
       }
       setResult(found);
@@ -159,13 +181,13 @@ export default function ScanScreen() {
             <Text style={[styles.infoText, { color: colors.foreground }]}>Empieza por el código de barras para recuperar datos conocidos. Después podrás añadir fotos y completar la información de la etiqueta.</Text>
           </View>
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>ELIGE UNA OPCIÓN</Text>
-          <OptionCard colors={colors} icon="barcode-outline" color={colors.primary} title="Escanear código de barras" description="Busca el vino en tu colección y en Open Food Facts" onPress={openBarcodeScanner} />
-          <OptionCard colors={colors} icon="camera" color="#7B2D3E" title="Fotografiar la etiqueta" description="Extrae en el móvil los datos escritos en la etiqueta" onPress={pickFromCamera} />
-          <OptionCard colors={colors} icon="images" color={colors.accent} title="Elegir de la galería" description="Analiza una foto existente de tu galería" onPress={pickFromGallery} />
+          <OptionCard colors={colors} icon="barcode-outline" color={colors.primary} title="Escanear código de barras" description="Busca en tu colección y en dos bases de productos" onPress={openBarcodeScanner} />
+          <OptionCard colors={colors} icon="camera" color="#7B2D3E" title="Fotografiar la etiqueta" description="Extrae en el móvil los datos escritos en la etiqueta" onPress={() => void pickFromCamera()} />
+          <OptionCard colors={colors} icon="images" color={colors.accent} title="Elegir de la galería" description="Analiza una foto existente de tu galería" onPress={() => void pickFromGallery()} />
           <Pressable onPress={() => router.replace("/add-wine")} style={({ pressed }) => [styles.skipBtn, { borderColor: colors.border, borderRadius: colors.radius }, pressed && { opacity: 0.7 }]}><Text style={[styles.skipText, { color: colors.mutedForeground }]}>Introducir manualmente</Text></Pressable>
           <View style={[styles.disclaimerBox, { backgroundColor: colors.muted, borderRadius: colors.radius }]}>
             <Ionicons name="shield-checkmark-outline" size={17} color={colors.mutedForeground} />
-            <Text style={[styles.disclaimerText, { color: colors.mutedForeground }]}>Las fotos y tu colección permanecen en el móvil. Al buscar en la base de datos solo se envía el número del código de barras.</Text>
+            <Text style={[styles.disclaimerText, { color: colors.mutedForeground }]}>Las fotos y tu colección permanecen en el móvil. A Open Food Facts y UPCitemdb solo se envía el número del código de barras.</Text>
           </View>
         </ScrollView>
       ) : result ? (
