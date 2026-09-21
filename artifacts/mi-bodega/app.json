@@ -2,7 +2,7 @@
   "expo": {
     "name": "Mi Bodega Personal",
     "slug": "mi-bodega",
-    "version": "1.6.0",
+    "version": "1.6.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "mi-bodega",
@@ -22,7 +22,7 @@
     },
     "android": {
       "package": "com.drjack32.mibodega",
-      "versionCode": 9,
+      "versionCode": 10,
       "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE"],
       "blockedPermissions": ["android.permission.RECORD_AUDIO"]
     },

@@ -99,6 +99,34 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
+export function formatBarcodeForReading(value: string) {
+  const barcode = value.replace(/\D/g, "");
+  if (barcode.length === 13) {
+    return `${barcode.slice(0, 1)} ${barcode.slice(1, 7)} ${barcode.slice(7)}`;
+  }
+  if (barcode.length === 12) {
+    return `${barcode.slice(0, 1)} ${barcode.slice(1, 6)} ${barcode.slice(6, 11)} ${barcode.slice(11)}`;
+  }
+  if (barcode.length === 8) {
+    return `${barcode.slice(0, 4)} ${barcode.slice(4)}`;
+  }
+  if (barcode.length === 14) {
+    return `${barcode.slice(0, 1)} ${barcode.slice(1, 7)} ${barcode.slice(7, 13)} ${barcode.slice(13)}`;
+  }
+  return barcode;
+}
+
+function gtinCheckDigit(payload: string) {
+  const sum = [...payload]
+    .map(Number)
+    .reverse()
+    .reduce(
+      (total, digit, index) => total + digit * (index % 2 === 0 ? 3 : 1),
+      0,
+    );
+  return (10 - (sum % 10)) % 10;
+}
+
 export function normalizeBarcode(value: string) {
   const barcode = value.replace(/[\s-]/g, "");
   if (!/^\d+$/.test(barcode)) {
@@ -108,7 +136,12 @@ export function normalizeBarcode(value: string) {
     throw new Error("Introduce un código EAN o UPC de 8, 12, 13 o 14 cifras.");
   }
   if (!hasValidGtinChecksum(barcode)) {
-    throw new Error("El código no supera la comprobación de seguridad. Revísalo e inténtalo de nuevo.");
+    const expected = gtinCheckDigit(barcode.slice(0, -1));
+    throw new Error(
+      `El código escrito es ${formatBarcodeForReading(barcode)} y no pasa la comprobación EAN. ` +
+        `Si las primeras ${barcode.length - 1} cifras fueran correctas, terminaría en ${expected}; ` +
+        "por tanto hay al menos una cifra mal copiada. Compáralo por bloques con la etiqueta.",
+    );
   }
   return barcode;
 }
@@ -119,14 +152,12 @@ export function hasValidGtinChecksum(barcode: string) {
   }
   const digits = [...barcode].map(Number);
   const check = digits.pop() ?? -1;
-  const sum = digits
-    .reverse()
-    .reduce((total, digit, index) => total + digit * (index % 2 === 0 ? 3 : 1), 0);
-  return (10 - (sum % 10)) % 10 === check;
+  return gtinCheckDigit(digits.join("")) === check;
 }
 
 function countryFromProduct(product: OpenFoodFactsProduct) {
-  const raw = `${text(product.countries)} ${textList(product.countries_tags)}`.toLowerCase();
+  const raw =
+    `${text(product.countries)} ${textList(product.countries_tags)}`.toLowerCase();
   if (/spain|españa|en:spain|es:espana/.test(raw)) return "España";
   if (/france|francia|en:france/.test(raw)) return "Francia";
   if (/italy|italia|en:italy/.test(raw)) return "Italia";
@@ -134,12 +165,16 @@ function countryFromProduct(product: OpenFoodFactsProduct) {
   if (/germany|alemania|en:germany/.test(raw)) return "Alemania";
   if (/argentina|en:argentina/.test(raw)) return "Argentina";
   if (/chile|en:chile/.test(raw)) return "Chile";
-  if (/united states|estados unidos|en:united-states/.test(raw)) return "Estados Unidos";
+  if (/united states|estados unidos|en:united-states/.test(raw))
+    return "Estados Unidos";
   return text(product.countries).split(",")[0]?.trim() ?? "";
 }
 
-function typeFromCategories(product: OpenFoodFactsProduct): WineType | undefined {
-  const raw = `${text(product.categories)} ${textList(product.categories_tags)}`.toLowerCase();
+function typeFromCategories(
+  product: OpenFoodFactsProduct,
+): WineType | undefined {
+  const raw =
+    `${text(product.categories)} ${textList(product.categories_tags)}`.toLowerCase();
   if (/sparkling|espumoso|champagne|cava/.test(raw)) return "espumoso";
   if (/ros[eé]|rosado|pink-wine/.test(raw)) return "rosado";
   if (/white-wine|vino blanco|vin blanc/.test(raw)) return "blanco";
@@ -165,7 +200,9 @@ function alcoholFromProduct(product: OpenFoodFactsProduct) {
   const nutriments = asRecord(product.nutriments);
   const candidate = nutriments?.alcohol_100g ?? nutriments?.alcohol_value;
   const amount = typeof candidate === "number" ? candidate : Number(candidate);
-  return Number.isFinite(amount) && amount > 0 && amount < 100 ? `${amount}%` : "";
+  return Number.isFinite(amount) && amount > 0 && amount < 100
+    ? `${amount}%`
+    : "";
 }
 
 export function fieldsFromOpenFoodFactsProduct(
@@ -209,7 +246,9 @@ export function fieldsFromOpenFoodFactsProduct(
   };
 
   return Object.fromEntries(
-    Object.entries(fields).filter(([, value]) => value !== undefined && value !== ""),
+    Object.entries(fields).filter(
+      ([, value]) => value !== undefined && value !== "",
+    ),
   ) as Partial<WineFormData>;
 }
 
@@ -244,13 +283,20 @@ export function fieldsFromUpcItemDbItem(
   };
 
   return Object.fromEntries(
-    Object.entries(fields).filter(([, value]) => value !== undefined && value !== ""),
+    Object.entries(fields).filter(
+      ([, value]) => value !== undefined && value !== "",
+    ),
   ) as Partial<WineFormData>;
 }
 
-export function lookupFromLocalWine(wine: Wine, barcode: string): WineLookupResult {
+export function lookupFromLocalWine(
+  wine: Wine,
+  barcode: string,
+): WineLookupResult {
   const fields = Object.fromEntries(
-    LOOKUP_FIELD_KEYS.map((key) => [key, wine[key]]).filter(([, value]) => value !== ""),
+    LOOKUP_FIELD_KEYS.map((key) => [key, wine[key]]).filter(
+      ([, value]) => value !== "",
+    ),
   ) as Partial<WineFormData>;
   return {
     barcode,
@@ -275,17 +321,20 @@ export async function lookupOpenFoodFacts(
     const response = await fetcher(endpoint, {
       headers: {
         Accept: "application/json",
-        "User-Agent": "MiBodega/1.6.0 (github.com/DrJack32/Mi_Bodega)",
+        "User-Agent": "MiBodega/1.6.1 (github.com/DrJack32/Mi_Bodega)",
       },
       signal: controller.signal,
     });
     if (response.status === 404) return null;
     if (!response.ok) {
-      throw new Error(`La base de datos respondió con el error ${response.status}.`);
+      throw new Error(
+        `La base de datos respondió con el error ${response.status}.`,
+      );
     }
     const payload = (await response.json()) as OpenFoodFactsResponse;
     const product = asRecord(payload.product) as OpenFoodFactsProduct | null;
-    if (!product || payload.status === "failure" || payload.status === 0) return null;
+    if (!product || payload.status === "failure" || payload.status === 0)
+      return null;
 
     const fields = fieldsFromOpenFoodFactsProduct(product);
     if (Object.keys(fields).length === 0) return null;
@@ -299,7 +348,9 @@ export async function lookupOpenFoodFacts(
     };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      throw new Error("La consulta ha tardado demasiado. Comprueba la conexión e inténtalo de nuevo.");
+      throw new Error(
+        "La consulta ha tardado demasiado. Comprueba la conexión e inténtalo de nuevo.",
+      );
     }
     throw error;
   } finally {
@@ -324,12 +375,15 @@ export async function lookupUpcItemDb(
     // No debe impedir que la app continúe con OCR o entrada manual.
     if (response.status === 404 || response.status === 429) return null;
     if (!response.ok) {
-      throw new Error(`La segunda base de datos respondió con el error ${response.status}.`);
+      throw new Error(
+        `La segunda base de datos respondió con el error ${response.status}.`,
+      );
     }
     const payload = (await response.json()) as UpcItemDbResponse;
     const items = Array.isArray(payload.items) ? payload.items : [];
     const item = asRecord(items[0]) as UpcItemDbItem | null;
-    if (!item || payload.code === "INVALID_UPC" || payload.code === "NOT_FOUND") return null;
+    if (!item || payload.code === "INVALID_UPC" || payload.code === "NOT_FOUND")
+      return null;
 
     const fields = fieldsFromUpcItemDbItem(item);
     if (Object.keys(fields).length === 0) return null;

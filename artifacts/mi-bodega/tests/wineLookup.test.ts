@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   fieldsFromOpenFoodFactsProduct,
   fieldsFromUpcItemDbItem,
+  formatBarcodeForReading,
   hasValidGtinChecksum,
   lookupFromLocalWine,
   lookupOpenFoodFacts,
@@ -17,6 +18,9 @@ test("valida códigos EAN y rechaza errores de escritura", () => {
   assert.equal(normalizeBarcode("8410 0360 0201 5"), "8410036002015");
   assert.equal(hasValidGtinChecksum("8410036002014"), false);
   assert.throws(() => normalizeBarcode("8410036002014"), /comprobación/);
+  assert.equal(normalizeBarcode("8420765000534"), "8420765000534");
+  assert.equal(formatBarcodeForReading("8420765000534"), "8 420765 000534");
+  assert.throws(() => normalizeBarcode("8720765000534"), /terminaría en 5/);
 });
 
 test("convierte un producto de Open Food Facts en datos editables del vino", () => {
@@ -44,24 +48,28 @@ test("convierte un producto de Open Food Facts en datos editables del vino", () 
 });
 
 test("una consulta inexistente no inventa un vino", async () => {
-  const result = await lookupOpenFoodFacts("8410036002015", async () =>
-    new Response(JSON.stringify({ status: "failure" }), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }),
+  const result = await lookupOpenFoodFacts(
+    "8410036002015",
+    async () =>
+      new Response(JSON.stringify({ status: "failure" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
   );
   assert.equal(result, null);
 });
 
 test("la consulta conserva código, fuente y enlace de procedencia", async () => {
-  const result = await lookupOpenFoodFacts("8410036002015", async () =>
-    new Response(
-      JSON.stringify({
-        status: "success",
-        product: { product_name: "Vino de prueba", quantity: "750 ml" },
-      }),
-      { status: 200, headers: { "content-type": "application/json" } },
-    ),
+  const result = await lookupOpenFoodFacts(
+    "8410036002015",
+    async () =>
+      new Response(
+        JSON.stringify({
+          status: "success",
+          product: { product_name: "Vino de prueba", quantity: "750 ml" },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ),
   );
 
   assert.equal(result?.barcode, "8410036002015");
@@ -110,13 +118,21 @@ test("prueba UPCitemdb cuando Open Food Facts no conoce el EAN", async () => {
     const url = String(input);
     requested.push(url);
     if (url.includes("openfoodfacts")) {
-      return new Response(JSON.stringify({ status: "failure" }), { status: 200 });
+      return new Response(JSON.stringify({ status: "failure" }), {
+        status: 200,
+      });
     }
     return new Response(
       JSON.stringify({
         code: "OK",
         total: 1,
-        items: [{ title: "Vino encontrado", brand: "Bodega de prueba", size: "75 cl" }],
+        items: [
+          {
+            title: "Vino encontrado",
+            brand: "Bodega de prueba",
+            size: "75 cl",
+          },
+        ],
       }),
       { status: 200 },
     );
